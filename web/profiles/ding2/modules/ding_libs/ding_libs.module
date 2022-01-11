@@ -1,0 +1,273 @@
+<?php
+
+/**
+ * @file
+ * Common module for external shared libraries.
+ */
+
+/**
+ * Implements hook_libraries_info().
+ *
+ * For defining external libraries.
+ */
+function ding_libs_libraries_info() {
+  return array(
+    'chosen' => array(
+      'name' => 'Chosen',
+      'vendor url' => 'https://github.com/harvesthq/chosen',
+      'download url' => 'https://github.com/harvesthq/chosen/releases',
+      'version arguments' => array(
+        'file' => 'chosen.jquery.min.js',
+        'pattern' => '@(?:Chosen v|Version\s+)([0-9a-zA-Z\.-]+)@',
+      ),
+      'files' => array(
+        'css' => array('chosen.min.css'),
+        'js' => array('chosen.jquery.min.js'),
+      ),
+    ),
+    'guzzle' => array(
+      'name' => 'Guzzle',
+      'vendor url' => 'https://github.com/guzzle/guzzle',
+      'download url' => 'https://github.com/guzzle/guzzle',
+      'version' => '6.2',
+      'xautoload' => function ($adapter) {
+        $adapter->composerJson('composer.json');
+      },
+    ),
+    'html5shiv' => array(
+      'name' => 'HTML5 Shiv',
+      'vendor url' => 'https://github.com/aFarkas/html5shiv',
+      'download url' => 'https://github.com/aFarkas/html5shiv/archive/3.7.3.zip',
+      'version arguments' => array(
+        'file' => 'dist/html5shiv.min.js',
+        'pattern' => '/\*.*HTML5 Shiv ([0-9a-zA-Z\.-]+)/',
+      ),
+      'files' => array(
+        'js' => array('dist/html5shiv.min.js'),
+      ),
+    ),
+    'http-message' => array(
+      'name' => 'Common interface for HTTP messages',
+      'vendor url' => 'https://github.com/php-fig/http-message',
+      'download url' => 'https://github.com/php-fig/http-message',
+      'version' => '1.0',
+      'xautoload' => function ($adapter) {
+        $adapter->composerJson('composer.json');
+      },
+    ),
+    'js.cookie' => array(
+      'name' => 'JavaScript Cookie',
+      'vendor url' => 'https://github.com/js-cookie/js-cookie',
+      'download url' => 'https://github.com/js-cookie/js-cookie/releases',
+      'version arguments' => array(
+        'file' => 'js.cookie-2.2.0.min.js',
+        'pattern' => '/js-cookie v(\d+\.+\d+\.\d+)/',
+      ),
+      'files' => array(
+        'js' => array(
+          'js.cookie-2.2.0.min.js',
+        ),
+      ),
+    ),
+    'jsonmapper' => array(
+      'name' => 'JsonMapper',
+      'vendor url' => 'https://github.com/cweiske/jsonmapper',
+      'download url' => 'https://github.com/cweiske/jsonmapper',
+      'version' => 'v0.4.4',
+      'xautoload' => function ($adapter) {
+        $adapter->addClassMap(
+        // Would like to:
+        // $adapter->composerJson('composer.json');
+        // But xautoload can't figure it out.
+          array(
+            'JsonMapper' => 'src/JsonMapper.php',
+            'JsonMapper_Exception' => 'src/JsonMapper/Exception.php',
+          )
+        );
+      },
+    ),
+    'masonry' => array(
+      'name' => 'Masonry',
+      'vendor url' => 'https://github.com/desandro/masonry',
+      'download url' => 'https://github.com/desandro/masonry/archive/v4.1.1.zip',
+      'version arguments' => array(
+        'file' => 'dist/masonry.pkgd.min.js',
+        'pattern' => '/\*.*Masonry PACKAGED v([0-9a-zA-Z\.-]+)/',
+      ),
+      'files' => array(
+        'js' => array('dist/masonry.pkgd.min.js'),
+      ),
+    ),
+    'phly-http' => array(
+      'name' => 'PSR-7 message implementation',
+      'vendor url' => 'https://github.com/phly/http',
+      'download url' => 'https://github.com/phly/http',
+      'version' => '0.11.1',
+      'xautoload' => function ($adapter) {
+        $adapter->composerJson('composer.json');
+      },
+    ),
+    'promises' => array(
+      'name' => 'Guzzle promises library',
+      'vendor url' => 'https://github.com/guzzle/promises',
+      'download url' => 'https://github.com/guzzle/promises',
+      'version' => '1.2',
+      'xautoload' => function ($adapter) {
+        $adapter->composerJson('composer.json');
+      },
+    ),
+    'psr7' => array(
+      'name' => 'PSR-7 message implementation',
+      'vendor url' => 'https://github.com/guzzle/psr7',
+      'download url' => 'https://github.com/guzzle/psr7',
+      'version' => '1.3',
+      'xautoload' => function ($adapter) {
+        $adapter->composerJson('composer.json');
+      },
+    ),
+    'slick' => array(
+      'name' => 'Slick.js carousel library',
+      'path' => 'slick',
+      'vendor url' => 'https://github.com/kenwheeler/slick',
+      'download url' => 'https://github.com/kenwheeler/slick/archive/1.8.0.zip',
+      'version arguments' => array(
+        'file' => 'slick/slick.js',
+        'pattern' => '/Version:\s+([0-9a-zA-Z\.-]+)/',
+        'lines' => 15,
+      ),
+      'files' => array(
+        'js' => array('slick.min.js'),
+        'css' => array('slick.css'),
+      ),
+      'variants' => array(
+        'non-minified' => array(
+          'files' => array(
+            'js' => array('slick.js'),
+            'css' => array('slick.css'),
+          ),
+        ),
+      ),
+    ),
+    'random_compat' => array(
+      'name' => 'random_compat',
+      'vendor url' => 'https://github.com/paragonie/random_compat',
+      'download url' => 'https://github.com/paragonie/random_compat',
+      'version' => 'v2.0.17',
+      'xautoload' => function ($adapter) {
+        $adapter->composerJson('composer.json');
+      },
+    ),
+    'oauth2-client' => array(
+      'name' => 'oauth2-client',
+      'vendor url' => 'https://github.com/thephpleague/oauth2-client',
+      'download url' => 'https://github.com/thephpleague/oauth2-client',
+      'version' => '2.3.0',
+      'xautoload' => function ($adapter) {
+        $adapter->composerJson('composer.json');
+      },
+    ),
+    'ddb-cover-service-php-client' => array(
+      'name' => 'ddb-cover-service-php-client',
+      'vendor url' => 'https://github.com/danskernesdigitalebibliotek/ddb-cover-service-php-client',
+      'download url' => 'https://github.com/danskernesdigitalebibliotek/ddb-cover-service-php-client',
+      'version' => '1.0.0',
+      'xautoload' => function ($adapter) {
+        $adapter->composerJson('composer.json');
+      },
+    ),
+    'ddb-cover-service-upload-php-client' => array(
+      'name' => 'ddb-cover-service-upload-php-client',
+      'vendor url' => 'https://github.com/danskernesdigitalebibliotek/ddb-cover-service-upload-php-client',
+      'download url' => 'https://github.com/danskernesdigitalebibliotek/ddb-cover-service-upload-php-client',
+      'version' => '1.0.1',
+      'xautoload' => function ($adapter) {
+        $adapter->composerJson('composer.json');
+      },
+    ),
+    'tui-color-picker' => array(
+      'name' => 'TUI color picker',
+      'path' => 'dist',
+      'vendor url' => 'https://nhn.github.io/tui.color-picker/latest/',
+      'download url' => 'https://github.com/nhn/tui.color-picker/archive/v2.2.6.tar.gz',
+      'version arguments' => array(
+        'file' => 'dist/tui-color-picker.js',
+        'pattern' => '/@version\s+([0-9a-zA-Z\.-]+)/',
+        'lines' => 15,
+      ),
+      'files' => array(
+        'js' => array('tui-color-picker.min.js'),
+        'css' => array('tui-color-picker.min.css'),
+      ),
+      'variants' => array(
+        'non-minified' => array(
+          'files' => array(
+            'js' => array('tui-color-picker.js'),
+            'css' => array('tui-color-picker.css'),
+          ),
+        ),
+      ),
+    ),
+    'tui-image-editor' => array(
+      'name' => 'TUI image editor',
+      'path' => 'dist',
+      'vendor url' => 'https://nhn.github.io/tui-image-editor/latest/',
+      'download url' => 'https://github.com/nhn/tui.image-editor/archive/v3.9.0.tar.gz',
+      'version arguments' => array(
+        'file' => 'dist/tui-image-editor.js',
+        'pattern' => '/@version\s+([0-9a-zA-Z\.-]+)/',
+        'lines' => 15,
+      ),
+      'files' => array(
+        'js' => array('tui-image-editor.min.js'),
+        'css' => array('tui-image-editor.min.css'),
+      ),
+      'variants' => array(
+        'non-minified' => array(
+          'files' => array(
+            'js' => array('tui-image-editor.js'),
+            'css' => array('tui-image-editor.css'),
+          ),
+        ),
+      ),
+    ),
+    'tui-code-snippet' => array(
+      'name' => 'TUI code snippet',
+      'path' => 'dist',
+      'vendor url' => 'https://nhn.github.io/tui.code-snippet/latest/',
+      'download url' => 'https://github.com/nhn/tui.code-snippet/archive/v1.5.2.tar.gz',
+      'version arguments' => array(
+        'file' => 'dist/tui-code-snippet.js',
+        'pattern' => '/@version\s+([0-9a-zA-Z\.-]+)/',
+        'lines' => 15,
+      ),
+      'files' => array(
+        'js' => array('tui-code-snippet.min.js'),
+      ),
+      'variants' => array(
+        'non-minified' => array(
+          'files' => array(
+            'js' => array('tui-code-snippet.js'),
+          ),
+        ),
+      ),
+    ),
+    'fabric' => array(
+      'name' => 'Fabric HTML5 canvas library',
+      'vendor url' => 'http://fabricjs.com/',
+      'download url' => 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/3.3.2/fabric.js',
+      'version' => '3.3.2',
+      'files' => array(
+        'js' => array('fabric.js'),
+      ),
+    ),
+    'yaml' => array(
+      'name' => 'Symfony YAML',
+      'vendor url' => 'https://symfony.com/doc/current/components/yaml.html',
+      'download url' => 'https://github.com/symfony/yaml/archive/v3.4.47.tar.gz',
+      'version' => '3.4',
+      'xautoload' => function ($adapter) {
+        $adapter->composerJson('composer.json');
+      },
+    ),
+  );
+}

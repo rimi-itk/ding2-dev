@@ -1,0 +1,80 @@
+<?php
+
+/**
+ * Webform module flood tests.
+ */
+class WebformFloodTestCase extends WebformTestCase {
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function getInfo() {
+    return array(
+      'name' => t('Webform flood detection'),
+      'description' => t('Submits a sample webform multiple times and tests flood detection.'),
+      'group' => t('Webform'),
+    );
+  }
+
+  /**
+   * Test flood event registration for authenticated user.
+   */
+  public function testWebformSubmissionFloodEventAuth() {
+    $this->drupalLogin($this->webform_users['admin']);
+    $this->webformReset();
+    variable_set('webform_tracking_mode', 'ip_address');
+
+    $node = $this->webformForm(array(
+      'submit_interval' => 36000,
+      'submit_limit' => 3,
+    ));
+    $node = node_load($node->nid);
+
+    $this->webformFlood($node->nid, 3);
+
+    // Attempt to submit once more.
+    $this->drupalGet('node/' . $node->nid, array('query' => array('foo' => 'bar')));
+    $this->assertText(t('You may not submit another entry at this time.'));
+
+    $this->drupalLogout();
+    variable_del('webform_tracking_mode');
+  }
+
+  /**
+   * Test flood event registration for anonymous user.
+   */
+  public function testWebformSubmissionFloodEventAnon() {
+    $this->drupalLogin($this->webform_users['admin']);
+    $this->webformReset();
+    variable_set('webform_tracking_mode', 'ip_address');
+
+    $node = $this->webformForm(array(
+      'submit_interval' => 36000,
+      'submit_limit' => 3,
+    ));
+    $node = node_load($node->nid);
+
+    $this->drupalLogout();
+
+    $this->webformFlood($node->nid, 4);
+    $this->assertText(t('You may not submit another entry at this time.'));
+    variable_del('webform_tracking_mode');
+  }
+
+  /**
+   * Helper function to flood a webform with a specific number of default entries.
+   *
+   * @param int $nid
+   *   The nid of the form.
+   *
+   * @param int $iterations
+   *   The number of times to submit.
+   */
+  public function webformFlood($nid, $iterations) {
+    for ($i = 0; $i < $iterations; $i++) {
+      $this->drupalGet('node/' . $nid, array('query' => array('foo' => 'bar')));
+      $this->drupalPost(NULL, array(), 'Submit', array(), array(), 'webform-client-form-' . $nid);
+    }
+  }
+
+}

@@ -1,0 +1,25 @@
+<?php
+/**
+ * @file
+ * Handle module installation.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function ding_adgangsplatformen_install() {
+  // Set module weight to ensure that hook_logout is call last.
+  db_update('system')
+    ->fields(array('weight' => 9999))
+    ->condition('name', 'ding_adgangsplatformen', '=')
+    ->execute();
+}
+
+/**
+ * Set default revoke end-point url.
+ */
+function ding_adgangsplatformen_update_7001() {
+  $config = ding_adgangsplatformen_get_configuration();
+  $config['revoke'] = 'https://login.bib.dk/oauth/revoke';
+  variable_set('ding_adgangsplatformen_settings', $config);
+}

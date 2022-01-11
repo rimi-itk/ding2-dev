@@ -1,0 +1,5 @@
+name = Ding sharer
+description = Share buttons.
+package = Ding!
+core = 7.x
+dependencies[] = ting_covers

@@ -1,0 +1,262 @@
+<?php
+/**
+ * @file
+ * Contains all methods, related to in/uninstalling module and DB scheme.
+ */
+
+/**
+ * Implements hook_field_schema().
+ */
+function ding_place2book_field_schema($field) {
+  $schema = array();
+
+  switch ($field['type']) {
+    case 'ding_p2b':
+      $schema['columns'] = array(
+        'event_id' => array(
+          'type' => 'varchar',
+          'length' => 256,
+          'not null' => FALSE,
+          'default' => NULL,
+        ),
+        'event_maker_id' => array(
+          'type' => 'varchar',
+          'length' => 256,
+          'not null' => FALSE,
+          'default' => NULL,
+        ),
+        'synchronize' => array(
+          'type' => 'int',
+          'size' => 'tiny',
+          'not null' => TRUE,
+          'default' => 0,
+        )
+      );
+      break;
+  }
+
+  return $schema;
+}
+
+/**
+ * Add column for storing ticket type.
+ */
+function ding_place2book_update_7000() {
+  db_add_field('ding_place2book', 'ticket_type', array(
+    'type' => 'varchar',
+    'length' => 255,
+    'not null' => TRUE,
+    'default' => '',
+    'description' => 'Ticket type',
+  ));
+}
+
+/**
+ * Update ticket_type in all existing place2book-settings to 'Adgang'.
+ */
+function ding_place2book_update_7001() {
+  db_update('ding_place2book')
+    ->fields(array('ticket_type' => 'Adgang'))
+    ->execute();
+}
+
+/**
+ * Add ticket type column.
+ */
+function ding_place2book_update_7002() {
+  db_add_field('ding_place2book', 'ticket_status', array(
+    'type' => 'varchar',
+    'length' => 255,
+    'not null' => TRUE,
+    'default' => '',
+    'description' => 'Ticket status',
+  ));
+}
+
+/**
+ * Nothing is updated - legacy purpose.
+ */
+function ding_place2book_update_7003(&$sandbox) {
+}
+
+/**
+ * Update events p2b data to be stored in new field.
+ */
+function ding_place2book_update_7004(&$sandbox) {
+  // This update will fail in newer versions of p2b module. So we check for the
+  // requirede function from the old module and bail out if it's not present.
+  if (!function_exists('ding_place2book_get_ticket_link')) {
+    return;
+  }
+
+  if (!isset($sandbox['processed'])) {
+    $sandbox['total'] = db_query("select count(nid) as count
+      from {ding_place2book} p2b
+      where p2b.place2book_id <> :no_p2b_id", array(
+        ':no_p2b_id' => DING_PLACE2BOOK_NO_ID,
+      )
+    )->fetchField();
+
+    $sandbox['processed'] = 0;
+  }
+
+  if ($sandbox['total']) {
+    $events = db_query("select nid, place2book_id
+      from {ding_place2book} p2b
+      where p2b.place2book_id <> :no_p2b_id LIMIT {$sandbox['processed']}, 20", array(
+        ':no_p2b_id' => DING_PLACE2BOOK_NO_ID,
+      )
+    )->fetchAll();
+
+    foreach ($events as $event) {
+      $event_node = node_load($event->nid);
+      if ($event_node) {
+        ding_place2book_get_ticket_link($event_node, $event->place2book_id);
+      }
+      $sandbox['processed']++;
+    }
+
+    $sandbox['#finished'] = $sandbox['processed'] / $sandbox['total'];
+  }
+}
+
+/**
+ * Implements hook_update_N().
+ *
+ * Adds defaults for each existing event.
+ */
+function ding_place2book_update_7005(&$sandbox) {
+  $query = new EntityFieldQuery();
+  $result = $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'ding_event')
+    ->execute();
+
+  if (isset($result['node'])) {
+    foreach ($result['node'] as $item) {
+      $node = node_load($item->nid);
+      $node->field_place2book[LANGUAGE_NONE][0] = array(
+        'event_id' => NULL,
+        'event_maker_id' => NULL,
+        'synchronize' => 0,
+      );
+      node_save($node);
+    }
+  }
+
+  // Remove field.
+  field_delete_field('field_place2book_tickets');
+
+  // Migrate settings.
+  $ding_place2book = variable_get('ding_place2book', array());
+  $ding_place2book_event_nodes = variable_get('ding_place2book_event_nodes', array());
+
+  variable_set('ding_p2b_default_capacity', $ding_place2book_event_nodes['capacity']);
+  variable_set('ding_p2b_default_price_name', $ding_place2book_event_nodes['ticket_type']);
+
+  // The following settings where used in a check box list, so we use empty
+  // to ensure the values are correctly converted to booleans for a single
+  // check box.
+  variable_set('ding_p2b_default_kultunaut_export', !empty($ding_place2book_event_nodes['defaults']['kultunaut_export']));
+  variable_set('ding_p2b_default_passive', !empty($ding_place2book_event_nodes['defaults']['passive']));
+  variable_set('ding_p2b_default_synchronize', !empty($ding_place2book_event_nodes['defaults']['maintain_copy']));
+
+  // Migrate event target to kultunaut age groups mappings.
+  variable_set('ding_p2b_kultunaut_age_group', variable_get('ding_place2book_target_mappings', []));
+
+  // Note: Unfortunately it's not straightforward to also migrate the event
+  // catogory to kultunaut mappings, since the keyes and some of the categories
+  // names have changed. Furthermore, in the old module, administratores were
+  // able to change the categories, so we can't even rely on the old categories
+  // to follow kultunaut standards. In the new module they are automatically
+  // fetched from kultunaut, which is the way to go.
+  // See: _ding_place2book_load_export_category() in ding_place2book.admin.inc
+
+  // Remove old variables.
+  variable_del('ding_place2book');
+  variable_del('ding_place2book_event_nodes');
+  variable_del('ding_place2book_target_mappings');
+  variable_del('ding_place2book_category_mappings');
+}
+
+/**
+ * Enable migration module for existing sites.
+ */
+function ding_place2book_update_7006() {
+  module_enable(array('ding_place2book_migrate'));
+}
+
+/**
+ * Remove ticket links from existing passive events.
+ */
+function ding_place2book_update_7007(&$sandbox) {
+  $nodes = [];
+
+  // Get the ding_event nodes we need to consider. We only consider those with
+  // an event end-date that hasn't passed. We can't make any assumptions about
+  // whether the nodes are publsihed or not, so no condition on $node->status.
+  if (!isset($sandbox['nodes'])) {
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', 'node')
+      ->entityCondition('bundle', 'ding_event')
+      ->fieldCondition('field_ding_event_date', 'value2', gmdate(DATE_FORMAT_DATETIME), '>')
+      ->fieldCondition('field_place2book', 'synchronize', '1', '=')
+      ->fieldCondition('field_place2book', 'event_id', 'NULL', '!=')
+      ->fieldCondition('field_place2book', 'event_maker_id', 'NULL', '!=');
+
+    $result = $query->execute();
+
+    if (isset($result['node'])) {
+      $nodes = array_keys($result['node']);
+    }
+  }
+  else {
+    $nodes = $sandbox['nodes'];
+  }
+
+  if (!isset($sandbox['processed'])) {
+    $sandbox['processed'] = 0;
+    $sandbox['total'] = count($nodes);
+  }
+
+  // Potentially we have to make request to p2b for all fetched ding_event nodes
+  // so keep the amount of nodes we process each run low.
+  $limit = 10;
+  $chunk = array_slice($nodes, $sandbox['processed'], $limit);
+  $chunk = entity_load('node', $chunk);
+
+  foreach ($chunk as $nid => $node) {
+    $field_place2book = field_get_items('node', $node, 'field_place2book');
+    list($event_id, $event_maker_id) = array_values($field_place2book[0]);
+    try {
+      $p2b = ding_place2book_instance();
+      $event = $p2b->getEvent($event_maker_id, $event_id);
+
+      if (!empty($event->passive)) {
+        $node_wrapper = entity_metadata_wrapper('node', $node);
+        $node_wrapper->field_ding_event_ticket_link->set(NULL);
+        node_save($node);
+      }
+    }
+    catch (Exception $ex) {
+      watchdog_exception('ding_place2book', $ex, t('Error appeared when removing ticket link for existing passive event. Event ID: !event_id, Event Maker ID: !event_maker_id, NID: !nid'), [
+        '!event_id' => $event_id,
+        '!event_maker_id' => $event_maker_id,
+        '!nid' => $nid,
+      ]);
+    }
+  }
+
+  $sandbox['processed'] += count($chunk);
+
+  if (!empty($nodes)) {
+    $sandbox['#finished'] = $sandbox['processed'] / $sandbox['total'];
+  }
+  else {
+    $sandbox['#finished'] = TRUE;
+  }
+
+  return t('Status: !processed / !total', [
+    '!processed' => $sandbox['processed'],
+    '!total' => $sandbox['total'],
+  ]);
+}

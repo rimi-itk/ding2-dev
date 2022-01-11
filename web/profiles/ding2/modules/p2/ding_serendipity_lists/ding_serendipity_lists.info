@@ -1,0 +1,9 @@
+name = Ding serendipity lists
+description = Serendipity based on user ding_lists
+package = Ding!
+core = 7.x
+dependencies[] = ding_base
+dependencies[] = ding_list
+dependencies[] = ding_loan
+dependencies[] = ding_provider
+dependencies[] = ding_serendipity

@@ -1,0 +1,16 @@
+<?php
+
+$finder = PhpCsFixer\Finder::create()
+    ->in(__DIR__.'/lib')
+;
+
+return PhpCsFixer\Config::create()
+    ->setRules([
+        '@PSR2' => true,
+        'phpdoc_align' => false,
+        'no_superfluous_phpdoc_tags' => false,
+        'array_syntax' => ['syntax' => 'short'],
+        'array_indentation' => true,
+        'trim_array_spaces' => true,
+    ])
+    ->setFinder($finder);

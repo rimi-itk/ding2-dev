@@ -1,0 +1,407 @@
+<?php
+
+/**
+ * @file
+ * Module for integrating DDB React apps.
+ */
+
+define('DING_REACT_FOLLOW_SEARCHES_URL', 'https://prod.followsearches.dandigbib.org');
+define('DING_REACT_MATERIAL_LIST_URL', 'https://prod.materiallist.dandigbib.org');
+define('DING_REACT_COVER_SERVICE_URL', 'https://cover.dandigbib.org/api/v2');
+
+/**
+ * @file
+ * Ding React apps.
+ */
+
+/**
+ * Implements hook_libraries_info().
+ *
+ * For defining external libraries.
+ */
+function ding_react_libraries_info() {
+  return [
+    'ddb-react' => [
+      'name' => 'DDB React',
+      'vendor url' => 'https://github.com/danskernesdigitalebibliotek/ddb-react',
+      'download url' => 'https://github.com/danskernesdigitalebibliotek/ddb-react/releases/download/latest/dist.zip',
+      // We have to set the version to something for Library API to work.
+      'version callback' => 'ding_react_get_version',
+      'files' => [
+        'js' => [
+          'runtime.js' => ['scope' => 'footer', 'group' => JS_LIBRARY],
+          'bundle.js' => ['scope' => 'footer', 'group' => JS_LIBRARY],
+          'polyfills.js' => ['scope' => 'footer', 'group' => JS_LIBRARY],
+          'mount.js' => ['scope' => 'footer', 'group' => JS_LIBRARY],
+        ],
+        'css' => ['components.css'],
+      ],
+    ],
+  ];
+}
+
+/**
+ * Libraries info version callback.
+ */
+function ding_react_get_version($library) {
+  // We do not care about any options given to the callback. Our version is
+  // always defined within a JSON file which is easy to parse.
+  $version_file = DRUPAL_ROOT . '/' . $library['library path'] . '/version.json';
+  $version_file_data = file_get_contents($version_file);
+  if ($version_file_data) {
+    $version_data = json_decode($version_file_data, TRUE);
+    if ($version_data && !empty($version_data['version'])) {
+      // The version number will be relative to the latest tag in the format
+      // provided by git describe. Libraries API uses strings for versions so
+      // we can so just return it as is.
+      return $version_data['version'];
+    }
+  }
+
+  watchdog('ding_react', 'Unable to read library version from %path', ['%path' => $version_file], WATCHDOG_ERROR);
+}
+
+/**
+ * Implements hook_menu().
+ */
+function ding_react_menu() {
+  $items['admin/config/ding/react'] = array(
+    'title' => 'React components',
+    'description' => 'Configure integration with React components.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ding_react_admin_settings_form'),
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'ding_react.admin.inc',
+  );
+  $items['ding_react/user.js'] = [
+    'title' => 'Retrieve access token',
+    'page callback' => 'ding_react_user_js',
+    // Everybody should get a user.js.
+    'access callback' => TRUE,
+    'type' => MENU_NORMAL_ITEM,
+  ];
+
+  return $items;
+}
+
+/**
+ * Implements hook_ding_provider_user().
+ */
+function ding_react_ding_provider_user() {
+  return [
+    'openplatform_token' => [
+      'required' => TRUE,
+    ],
+  ];
+}
+
+/**
+ * Implements hook_ding_entity_buttons().
+ */
+function ding_react_ding_entity_buttons($type, $entity, $view_mode = 'default', $widget = 'default') {
+  if ($type == 'ding_entity') {
+    $return = [];
+
+    $data = [
+      'material-list-url' => ding_react_material_list_url(),
+      'id' => $entity->ding_entity_id,
+      'add-text' => t('Add to checklist'),
+      'add-error-text' => t('An error occurred'),
+      'add-success-text' => t('Added to checklist'),
+      'remove-text' => t('Remove from checklist'),
+      'remove-error-text' => t('An error occurred'),
+      'remove-success-text' => t('Removed from checklist'),
+      'login-url' => ding_react_login_url(),
+    ];
+
+    $return[] = ding_react_app('checklist-material-button', $data);
+
+    return $return;
+  }
+}
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function ding_react_ctools_plugin_directory($module, $plugin) {
+  if ($module == 'ctools' || $module == 'panels') {
+    return 'plugins/' . $plugin;
+  }
+}
+
+/**
+ * Implements hook_module_implements_alter().
+ */
+function ding_react_module_implements_alter(&$implementations, $hook) {
+  if ($hook !== 'opensearch_pre_execute') {
+    return;
+  }
+
+  // To store the right query we need this module to execute at just the right
+  // time:
+  //
+  //   1. After ting_field_search which modifies the search query based on an
+  //      url query argument.
+  //   2. Before the fbs module which adds a filter for the local library which
+  //      we do not want transferred to our national service.
+  //
+  // Adjust the order order of the implementations accordingly.
+  $pos = array_search('ding_react', array_keys($implementations));
+  $ding_react = array_splice($implementations, $pos, 1);
+
+  // Insert ding_react after ting_field_search.
+  $before = array_search('ting_field_search', array_keys($implementations));
+  if ($before !== FALSE) {
+    $implementations = array_merge(
+      array_slice($implementations, 0, $before + 1),
+      $ding_react,
+      array_slice($implementations, $before + 1)
+    );
+  }
+
+  // Move fbs after ding_react if necessary.
+  $after = array_search('fbs', array_keys($implementations));
+  if ($after !== FALSE && $after <= $before) {
+    $fbs = array_splice($implementations, $after, 1);
+    $implementations = array_merge(
+      array_slice($implementations, 0, $before + 2),
+      $fbs,
+      array_slice($implementations, $before + 2)
+    );
+  }
+}
+
+/**
+ * Implements hook_opensearch_pre_execute().
+ */
+function ding_react_opensearch_pre_execute($request) {
+  if (get_class($request) !== TingClientSearchRequest::class) {
+    return;
+  }
+
+  // Set the currently executed query. When saved as a part of hook_pre_execute
+  // we also get any modifications made by other modules.
+  $query = $request->getQuery();
+  ding_react_search_query($query);
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function ding_react_form_search_block_form_alter(&$form, $form_state) {
+  global $user;
+
+  // Check if function exists so we don't need to have a hard dependency on
+  // ting_search and opensearch.
+  if (!function_exists('ting_search_current_results')) {
+    return;
+  }
+
+  // Get the current search query performed after most modifications. It would
+  // be nice if we could rely on the search request but some modules may
+  // modify the query at an even lower level so we use static storage as well.
+  $query = ding_react_search_query();
+
+  $result = ting_search_current_results();
+  if (!$result) {
+    return;
+  }
+  $search_request = $result->getSearchRequest();
+
+  // This form alter get called a lot, and most of the time the result doesn't
+  // have a search request. Luckily it seems to have in the exact case where we
+  // want to add the button.
+  if (!$search_request) {
+    return;
+  }
+
+  $title = $search_request->getFullTextQuery();
+  // Fall back on query from search request if no static query is available.
+  if (!$query) {
+    $query = $search_request->getFullTextQuery();
+  }
+
+  $data = [
+    'follow-searches-url' => ding_react_follow_searches_url(),
+    'default-title' => $title,
+    'search-query' => $query,
+    'login-url' => ding_react_login_url(),
+    'button-text' => t('Add to followed searches'),
+    'label' => t('Title for followed search'),
+    'add-button-text' => t('Add'),
+    'error-text' => t('An error occurred'),
+    'success-text' => t('Added to your followed searches.'),
+    'success-link-url' => url("user/{$user->uid}/followed-searches"),
+    'success-link-text' => t('See your followed searches.'),
+    'error-required-message' => t('Title is required.'),
+    'error-max-length-message' => t('Title must not be longer than 256 characters.'),
+    'help-text' => t('To follow your search query you must provide a title.'),
+  ];
+
+  $add_search_button = ding_react_app('add-to-searchlist', $data);
+
+  $form['search_block_form']['#field_suffix'] = drupal_render($add_search_button);
+  $form['#attributes']['class'][] = 'has-add-to-searchlist';
+}
+
+/**
+ * Implements hook_user_build().
+ */
+function ding_react_page_build(&$page) {
+  $query = drupal_get_query_parameters();
+  // Reset state when logging out. This ensures that things are reset and data
+  // does not carry over between authenticated and anonymous users.
+  // Logging out will cause a redirect and we do not have a good way to queue JS
+  // from hook_user_logout() to run on a subsequent page load. Consequently we
+  // have to rely on other factors. Logging out currently always sends the user
+  // to the frontpage with a certain query parameter.
+  if (drupal_is_front_page()
+    && !empty($query['message'])
+    && $query['message'] == 'logout') {
+    $attachments = !empty($page['page_bottom']['#attached']) ? $page['page_bottom']['#attached'] : [];
+    $page['page_bottom']['#attached'] = drupal_array_merge_deep($attachments, [
+      'libraries_load' => [
+        ['ddb-react'],
+      ],
+      'js' => [
+        drupal_get_path('module', 'ding_react') . '/js/ding-react.reset.js' => ['scope' => 'footer'],
+      ],
+    ]);
+  }
+}
+
+/**
+ * Return render array for an app.
+ *
+ * @param string $name
+ *   Name of the app.
+ * @param array $data
+ *   Data for the app.
+ *
+ * @return array
+ *   The app render array.
+ */
+function ding_react_app($name, array $data = []) {
+  $attachments = [
+    'libraries_load' => [
+      ['ddb-react'],
+    ],
+    'js' => [
+      // Weight needs to be > 0 to make the app code run after the libraries.
+      libraries_get_path('ddb-react') . '/' . $name . '.js' => [
+        'scope' => 'footer',
+        'group' => JS_LIBRARY,
+        'weight' => 1,
+      ],
+      drupal_get_path('module', 'ding_react') . '/js/ding-react.js' => ['scope' => 'footer'],
+    ],
+  ];
+
+  if (file_exists(libraries_get_path('ddb-react') . '/' . $name . '.css')) {
+    $attachments['css'] = [
+      libraries_get_path('ddb-react') . '/' . $name . '.css' => ['weight' => 1],
+    ];
+  }
+
+  $attributes = [];
+
+  $attributes['data-ddb-app'] = $name;
+
+  foreach ($data as $name => $value) {
+    $attributes['data-' . $name] = $value;
+  }
+
+  $build = [
+    '#type' => 'html_tag',
+    '#tag' => 'div',
+    '#attributes' => $attributes,
+    // Supply an empty string so we don't create a self closing element.
+    '#value' => '',
+    '#attached' => $attachments,
+  ];
+
+  return $build;
+}
+
+/**
+ * Menu callback which renders a JavaScript file containing user data.
+ */
+function ding_react_user_js() {
+  // Ding Varnish will cache requests even for logged in users. Mark this
+  // page as not cacheable to bypass Varnish. Uses should not get each others
+  // token due to a cached response.
+  drupal_page_is_cacheable(FALSE);
+
+  drupal_add_http_header('Content-Type', 'application/javascript');
+  echo "window.ddbReact = window.ddbReact || {};\n";
+
+  $tokens = [
+    'user' => ding_provider_invoke('openplatform_token', 'for_user'),
+    'library' => ding_provider_invoke('openplatform_token', 'for_agency'),
+  ];
+  $tokens = array_filter($tokens);
+
+  foreach ($tokens as $type => $token) {
+    echo sprintf("window.ddbReact.setToken('%s', '%s');\n", $type, $token);
+  }
+
+  drupal_exit();
+}
+
+/**
+ * Generate a login url which can be used as a prop for React apps.
+ *
+ * @return string
+ *   Login url.
+ */
+function ding_react_login_url() {
+  return ding_provider_invoke(
+    'openplatform_token',
+    'login_url',
+    ['query' => ['destination' => current_path()]]
+  );
+}
+
+/**
+ * Returns the url to the instance of the Material List service to use.
+ *
+ * @return string
+ *   Url to Material List service instance.
+ */
+function ding_react_material_list_url() {
+  return variable_get('ding_react_material_list_url', DING_REACT_MATERIAL_LIST_URL);
+}
+
+/**
+ * Returns the url to the instance of the Follow Searches service to use.
+ *
+ * @return string
+ *   Url to Follow Searches service instance.
+ */
+function ding_react_follow_searches_url() {
+  return variable_get('ding_react_follow_searches_url', DING_REACT_FOLLOW_SEARCHES_URL);
+}
+
+/**
+ * Returns the url to the instance of the Cover service to use.
+ *
+ * @return string
+ *   Url to Cover service instance.
+ */
+function ding_react_cover_service_url() {
+  return variable_get('ding_react_cover_service_url', DING_REACT_COVER_SERVICE_URL);
+}
+
+/**
+ * Static storage/retrieval of the currently executed search query.
+ *
+ * @param string $query
+ *   The current search query.
+ *
+ * @return string|mixed
+ *   The current search query - or null if this has not been set.
+ */
+function ding_react_search_query($query = NULL) {
+  return drupal_static(__FUNCTION__, $query);
+}

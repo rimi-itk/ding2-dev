@@ -1,0 +1,354 @@
+<?php
+
+/**
+ * @file
+ * Serendipity based on user lists and previous loans.
+ */
+
+use Ting\Search\TingSearchCommonFields;
+use Ting\Search\TingSearchFieldFilter;
+
+/**
+ * Implements hook_serendipity_info().
+ */
+function ding_serendipity_lists_serendipity_info() {
+  $items = array();
+
+  $items['ting_objects_adhr'] = array(
+    'title' => t('Ting objects via openlist ADHR service.'),
+    'description' => t('Call ADHR service on the current object to find related high rated materials.'),
+    'keys' => array('ting_object', 'frontpage'),
+  );
+
+  $items['ting_objects_adhl'] = array(
+    'title' => t('Ting objects via openlist ADHL service.'),
+    'description' => t('Call ADHL service on the current object to find related materials others have loaned.'),
+    'keys' => array('ting_object', 'frontpage'),
+  );
+
+  $items += array(
+    'frontpage_search' => array(
+      'title' => t('Front page fallback content'),
+      'description' => t('Allow the library admin to enter a search string which pulls materials to be pushed to the serendipity box on the front page.'),
+      'keys' => array('ting_object', 'frontpage'),
+      'settings' => l(t('Set the frontpage serendipity search string'), '/admin/config/ding/serendipity/key_overview/ding_serendipity_lists_frontpage_search_settings'),
+    ),
+    'loan_adhl' => array(
+      'title' => t('ADHL on random loan items'),
+      'description' => t('Check a random current loan via ADHL for serendipity.'),
+      'keys' => array('ting_object', 'frontpage'),
+    ),
+    'author_from_lists' => array(
+      'title' => t('Objects matching random author from lists'),
+      'description' => t('Find materials with same author as a random recent material from the user lists.'),
+      'keys' => array('ting_object', 'frontpage'),
+    ),
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_PLUGIN_NAME_serendipity_add().
+ *
+ * Fetch ADHR materials via users own top rated materials.
+ */
+function ding_serendipity_lists_ting_objects_adhr_serendipity_add($context) {
+  global $user;
+  $results = array();
+
+  // Only provider users has current loans.
+  if (!ding_user_is_provider_user($user)) {
+    return $results;
+  }
+
+  // Fetch one random high rated element.
+  $rnd_id = ding_entity_rating_get_highly_rated_material_id();
+  $obj = ding_entity_load($rnd_id, 'ting_object');
+
+  if (empty($obj)) {
+    return $results;
+  }
+
+  try {
+    $openlist_items = ding_provider_invoke('openlist', 'call_module', 'TingObjectRating', 'getSuggestion', array($rnd_id));
+  }
+  catch (Exception $e) {
+    watchdog_exception('ding_serendipity_lists', $e);
+    return $results;
+  }
+
+  // Pick max 8 items primarily among the most popular.
+  $picked = ding_serendipity_pick_weighted_random($openlist_items, 8);
+
+  $title = l($obj->getTitle(), "ting/object/" . $rnd_id);
+
+  // Add serendipity suggestion.
+  foreach ($picked as $row) {
+    $id = $row['object_id'];
+    $ting_object = ding_entity_load($id, 'ting_object');
+
+    if (empty($ting_object)) {
+      continue;
+    }
+
+    $results[] = array(
+      'type' => 'ting_object',
+      'id' => $id,
+      'object' => $ting_object,
+      'info' => array(
+        'description' => t('Because other people who also liked !title liked this.', array('!title' => $title)),
+      ),
+    );
+  }
+
+  return $results;
+}
+
+/**
+ * Implements hook_PLUGIN_NAME_serendipity_add().
+ *
+ * Fetch ADHL materials through openlist.
+ */
+function ding_serendipity_lists_ting_objects_adhl_serendipity_add($context) {
+  global $user;
+  $results = array();
+
+  // Only provider users has current loans.
+  if (!ding_user_is_provider_user($user)) {
+    return $results;
+  }
+
+  $list = ding_list_get_list(DING_LIST_TYPE_LOAN_HISTORY);
+  if (empty($list)) {
+    return $results;
+  }
+
+  $picked = ding_serendipity_pick_weighted_random($list->getElements(), 2);
+
+  foreach ($picked as $item) {
+    // Load source material title.
+    $source_id = $item->getValue();
+    $obj = ding_entity_load($source_id, 'ting_object');
+    if (empty($obj)) {
+      continue;
+    }
+
+    $source_title = truncate_utf8($obj->getTitle(), 70, TRUE, TRUE);
+    $source_link = l($source_title, entity_uri('ting_object', $obj)['path']);
+
+    try {
+      // Fetch suggestions from ADHL service.
+      $buffer = ding_provider_invoke('openlist', 'call_module', 'LoanHistory', 'getSuggestion', array(
+        $source_id,
+        ding_provider_invoke('openlist', 'user_identifier', $user),
+        4,
+      ));
+
+      // Insert suggestions and source into results.
+      foreach ($buffer as $row) {
+        $results[] = array(
+          'type' => 'ting_object',
+          'id' => $row['object_id'],
+          'info' => array(
+            'description' => t('Because others also borrowed !item', array('!item' => $source_link)),
+          ),
+        );
+      }
+    }
+    catch (Exception $e) {
+      watchdog_exception('ding_serendipity_lists', $e);
+    }
+  }
+
+  return $results;
+}
+
+/**
+ * Implements hook_PLUGIN_NAME_serendipity_add().
+ */
+function ding_serendipity_lists_frontpage_search_serendipity_add($context) {
+  $results = array();
+  if ($query_string = variable_get('ding_serendipity_lists_frontpage_search_string', '')) {
+    // Fetch search results.
+    $query = ting_start_query()->withRawQuery($query_string);
+    $results = ding_serendipity_do_search($query);
+    if ($results) {
+      // Append info.
+      foreach ($results as & $item) {
+        $item['info'] = array(
+          'description' => t('Recommended by the library.'),
+        );
+      }
+    }
+  }
+  return $results;
+}
+
+/**
+ * Add settings for the adhl callback to the serendipity info array.
+ */
+function ding_serendipity_lists_frontpage_search_settings() {
+  $form = array();
+
+  $form['ding_serendipity_lists_frontpage_search_string'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Front page serendipity fallback search string'),
+    '#default_value' => variable_get('ding_serendipity_lists_frontpage_search_string', ''),
+    '#size' => 160,
+    '#maxlength' => 300,
+  );
+
+  $form['test_query'] = array(
+    '#type' => 'button',
+    '#value' => t('Test Query'),
+    '#ajax' => array(
+      'wrapper' => 'test-query-container',
+      'callback' => 'ding_serendipity_test_query_callback',
+    ),
+    '#suffix' => '<div id="test-query-container"></div>',
+    '#query_element' => 'ding_serendipity_lists_frontpage_search_string',
+  );
+
+  return system_settings_form($form);
+}
+
+/**
+ * Implements hook_PLUGIN_NAME_serendipity_add().
+ *
+ * Select random objects from current loans and
+ * fetch recommended objecs via ADHL service.
+ */
+function ding_serendipity_lists_loan_adhl_serendipity_add($context) {
+  global $user;
+  $results = array();
+
+  // Only provider users has current loans.
+  if (!ding_user_is_provider_user($user)) {
+    return $results;
+  }
+
+  $loans = ding_provider_invoke('loan', 'list', $user);
+
+  if (empty($loans)) {
+    $list = ding_list_get_list(DING_LIST_TYPE_LOAN_HISTORY);
+    if (empty($list)) {
+      return $results;
+    }
+
+    $picked = ding_serendipity_pick_weighted_random($list->getElements(), 2);
+
+    foreach ($picked as $element) {
+      // Create structure similar to DingProviderLoan, in order to mix current
+      // loans with previous loans. We just need the ding_entity_id below, for
+      // loading the random picks.
+      $loan = new StdClass();
+      $loan->ding_entity_id = $element->getValue();
+      $loans[] = $loan;
+    }
+  }
+
+  if (!empty($loans)) {
+    // Pick max 2 random current loans.
+    $randoms = ding_serendipity_pick_weighted_random($loans, 2);
+
+    foreach ($randoms as $random) {
+      $obj = ding_entity_load($random->ding_entity_id, 'ting_object');
+      if (!empty($obj)) {
+        $isbn = $obj->getIsbn();
+        if (!empty($isbn)) {
+          if (is_array($isbn)) {
+            $isbn = current($isbn);
+          }
+
+          // TODO Replace direct call to ADHL with abstraction layer.
+          $recommendations = opensearch_get_object_recommendations($isbn, 4);
+          $title = truncate_utf8($obj->getTitle(), 60, TRUE, TRUE);
+
+          if (!empty($recommendations)) {
+            // Collect ADHL recommendations to results.
+            foreach ($recommendations as $recommendation) {
+              $results[] = array(
+                'type' => 'ting_object',
+                'id' => ding_provider_build_entity_id($recommendation->localId),
+                'info' => array(
+                  'adhl' => 'adhl',
+                  'description' => t('Because others also borrowed !item', array('!item' => l($title, 'ting/object/' . $obj->getId()))),
+                ),
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+  return $results;
+}
+
+/**
+ * Implements hook_PLUGIN_NAME_serendipity_add().
+ *
+ * Find objects matching some random author from the user lists.
+ */
+function ding_serendipity_lists_author_from_lists_serendipity_add($context) {
+  global $user;
+
+  if (!ding_user_is_provider_user($user) || !isset($context['bundle']) || $context['bundle'] != 'ting_object') {
+    return array();
+  }
+
+  $terms = array();
+  $results = array();
+
+  // Random user list item.
+  $ting_entity = ding_list_get_random_user_list_item();
+
+  // Fetch author.
+  if ($ting_entity) {
+    $author = $ting_entity->getCreators();
+    if (empty($author)) {
+      return array();
+    }
+
+    $field_filters = [];
+    // Pick the first author.
+    $field_filters[] = new TingSearchFieldFilter(TingSearchCommonFields::AUTHOR, $author[0]);
+
+    // Taxonomy term pages (except frontpage) has a subject we want to add to
+    // the CQL.
+    if ($context['frontpage'] !== "1" && isset($context['taxonomy_tid'])) {
+      $term = taxonomy_term_load($context['taxonomy_tid']);
+
+      // Check if term has a specific CQL already set.
+      $value = ding_base_get_value('taxonomy_term', $term, 'field_search_string');
+
+      // Fallback to dc.subject.
+      if ($value === FALSE) {
+        $field_filters[] = new TingSearchFieldFilter(TingSearchCommonFields::SUBJECT, $term->name);
+      }
+    }
+
+    // Limit to same language to reduce signal to noise.
+    $lang = $ting_entity->getLanguage();
+    if (!empty($lang) && $lang !== "Flere sprog") {
+      $field_filters[] = new TingSearchFieldFilter(TingSearchCommonFields::LANGUAGE, $ting_entity->getLanguage());
+    }
+    $query = ting_start_query()->withFilters($field_filters);
+
+    // Fetch search results.
+    $results = ding_serendipity_do_search($query);
+    foreach ($results as &$item) {
+      $item['info'] = array(
+        'Query' => $query,
+        'description' => t(
+          'Because you have a list with materials by the author !author.',
+          array(
+            '!author' => l($author[0], 'search/ting/phrase.creator="' . $author[0] . '"'),
+          )
+        ),
+      );
+    }
+  }
+
+  return $results;
+}

@@ -1,0 +1,4 @@
+.ding-list-list .tabledrag-toggle-weight-wrapper,
+.ding-list-list .tabledrag-changed-warning {
+  display: none !important;
+}

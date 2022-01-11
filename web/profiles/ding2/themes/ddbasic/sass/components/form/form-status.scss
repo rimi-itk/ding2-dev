@@ -1,0 +1,87 @@
+//
+// Styling of provider status forms
+
+@import "../../base.scss";
+
+// ==========================================================================
+// User loans
+// ==========================================================================
+
+#ding-loan-loans-form {
+  .anchor {
+    float: left;
+  }
+
+  > div {
+    > .select-all {
+      position: relative;
+      float: left;
+      width: 100%;
+      float: left;
+      padding: 23px 20px;
+      margin: 10px 0;
+      background-color: $grey-dark;
+
+      @include media($mobile) {
+        padding: 10px;
+      }
+      .form-item {
+        margin: 0;
+        color: $white;
+        &.form-disabled {
+          label::before {
+            visibility: hidden;
+          }
+        }
+      }
+    }
+  }
+}
+
+// ==========================================================================
+// User debts
+// ==========================================================================
+#ding-debt-debts-form {
+  .material-item .item-title {
+    padding-top: 10px;
+  }
+
+  .material-item .item-title span {
+    display: block;
+    margin: 0;
+    margin-bottom: 5px;
+    white-space: normal;
+  }
+
+  h2 {
+    margin-top: 2em;
+  }
+
+  .pay-buttons a {
+    // Apparently there's no class or mixin for creating a button that
+    // looks like a submit button, so we'll have to do it ourselves.
+    @include appearance(none);
+    @include font("base");
+    @include transition(background-color $speed $ease);
+
+    display: block;
+    height: $element-height;
+    padding: 20px 15px 14px;
+    border: none;
+    border-radius: $round-corner;
+    color: $white;
+    background-color: $charcoal;
+    line-height: 1em;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background-color: $grey-dark;
+    }
+
+    &:focus {
+      outline: none;
+      box-shadow: 0 0 10px $grey-medium;
+    }
+  }
+}

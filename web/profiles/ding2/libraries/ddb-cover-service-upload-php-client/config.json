@@ -1,0 +1,13 @@
+  
+{
+  "packagePath": "",
+  "artifactVersion": "1.0.0",
+  "invokerPackage": "CoverServiceUpload",
+  "modelPackage": "Model",
+  "apiPackage": "Api",
+  "composerVendorName": "danskernesdigitalebibliotek",
+  "composerProjectName": "ddb-cover-service-upload-php-client",
+  "httpUserAgent": "CoverServiceUpload-PHP/1.0.0",
+  "gitUserId": "danskernesdigitalebibliotek",
+  "gitRepoId": "ddb-cover-service-upload-php-client"
+}

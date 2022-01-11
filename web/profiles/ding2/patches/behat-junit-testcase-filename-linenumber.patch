@@ -1,0 +1,19 @@
+This will allow CircleCI to match individual features reported by
+liuggio/fastest with time reported running them by Behat when using
+the split by timings option.
+
+diff --git a/src/Behat/Behat/Output/Node/Printer/JUnit/JUnitScenarioPrinter.php b/src/Behat/Behat/Output/Node/Printer/JUnit/JUnitScenarioPrinter.php
+index cf61eaab..2fef2b83 100644
+--- a/src/Behat/Behat/Output/Node/Printer/JUnit/JUnitScenarioPrinter.php
++++ b/src/Behat/Behat/Output/Node/Printer/JUnit/JUnitScenarioPrinter.php
+@@ -70,8 +70,9 @@ final class JUnitScenarioPrinter
+         $outputPrinter = $formatter->getOutputPrinter();
+
+         $outputPrinter->addTestcase(array(
+-            'name' => $name,
+-            'status' => $this->resultConverter->convertResultToString($result)
++            'name' => $feature->getFile() . ':' . $scenario->getLine(),
++            'status' => $this->resultConverter->convertResultToString($result),
++            'time' => $this->durationListener ? $this->durationListener->getDuration($scenario) : ''
+         ));
+     }

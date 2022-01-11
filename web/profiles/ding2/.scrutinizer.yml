@@ -1,0 +1,41 @@
+build:
+  nodes:
+    analysis:
+      tests:
+        override:
+          - phpcs-run
+          - jshint-run
+
+build_failure_conditions:
+  # No new issues allowed.
+  - 'issues.new.exists'
+
+filter:
+    excluded_paths:
+        # Behat context classes uses PSR2 codestyle.
+        - 'tests/behat/features/bootstrap/*'
+        # Generated Features code
+        - '*.features.*'
+        - '*.feeds_importer_default.inc'
+        - '*.field_group.inc'
+        - '*.layouts.inc'
+        - '*.pages_default.inc'
+        - '*.panels_default.inc'
+        - '*.panelizer.inc'
+        - '*.strongarm.inc'
+        - '*.ting_field_search_default_profiles.inc'
+        - '*.views_default.inc'
+        # Generated webservice client code for FBS
+        - modules/fbs/prancer/*
+        # Third party dependencies for FBS
+        - modules/fbs/vendor/*
+        # Third party JavaScript libraries
+        - themes/ddbasic/scripts/contrib/*
+        # Minified JavaScript files
+        - themes/ddbasic/scripts/*min.js
+        # Third party JavaScript libraries used in modules
+        - modules/ding_webtrends/js/webtrends*.js
+        - modules/ting_search_carousel/js/jquery.*
+        - modules/contrib/jquery_update/replace/ui/external/jquery.cookie*.js
+        - modules/ding_tabroll/js/jquery-ui-tabs-rotate*.js
+        - modules/ding_nodelist/js/jquery-ui-tabs-rotate.js

@@ -1,0 +1,1099 @@
+<?php
+/**
+ * @file
+ * Setup default theme, shortcuts, roles, language, search and features.
+ */
+
+/**
+ * Implements hook_install().
+ *
+ * Perform actions to set up the site for this profile.
+ */
+function ding2_install() {
+  // Set default variables.
+  $default_theme = 'ddbasic';
+  $admin_theme = 'seven';
+
+  $t = get_t();
+
+  //
+  // Disable all themes and only active default and admin themes.
+  //
+  db_update('system')
+    ->fields(array('status' => 0))
+    ->condition('type', 'theme')
+    ->execute();
+
+  // Enable themes.
+  theme_enable(array($default_theme, $admin_theme));
+
+  // Enable $default_theme.
+  variable_set('theme_default', $default_theme);
+
+  // Enable $admin_theme.
+  variable_set('admin_theme', $admin_theme);
+
+  // Activate admin theme when editing a node.
+  variable_set('node_admin_theme', '1');
+
+  //
+  // Add shortcuts to the default set on install.
+  //
+  $shortcut_set = shortcut_set_load(SHORTCUT_DEFAULT_SET_NAME);
+  $shortcut_set->links = NULL;
+  $shortcut_set->links = array(
+    array(
+      'link_path' => 'admin/config/regional/translate',
+      'link_title' => $t('Translation'),
+      'weight' => -17,
+    ),
+    array(
+      'link_path' => 'admin/appearance/settings/ddbasic',
+      'link_title' => $t('Theme settings'),
+      'weight' => -18,
+    ),
+    array(
+      'link_path' => 'admin/config/user-interface/backgrounds',
+      'link_title' => $t('Backgrounds'),
+      'weight' => -19,
+    ),
+  );
+  shortcut_set_save($shortcut_set);
+
+  // Set default source language for i18n module.
+  variable_set('i18n_string_source_language', 'en');
+
+  // Disable configurable timezones for users.
+  variable_set('configurable_timezones', 0);
+
+  // Select the ding_frontpage as front page.
+  variable_set('site_frontpage', 'ding_frontpage');
+
+  //
+  // Enable ting search as default.
+  //
+
+  $active_search = variable_get('search_active_modules', array());
+  $search_defaults = array(
+    'node' => 'node',
+    'ting_search' => 'ting_search',
+    'user' => 0,
+    'mkdru' => 'mkdru',
+  );
+  // Avoid overwriting other modules search settings.
+  // Search default has precedence
+  variable_set('search_active_modules', $search_defaults + $active_search);
+  variable_set('search_default_module', 'ting_search');
+
+  //
+  // Enable the panel pages for ting objects and search.
+  //
+  variable_set('ting_ting_object_disabled', FALSE);
+  variable_set('ting_ting_collection_disabled', FALSE);
+  variable_set('page_manager_search_disabled_ting_search', FALSE);
+
+  //
+  // Allow visitor account creation, but with administrative approval.
+  //
+  variable_set('user_register', USER_REGISTER_ADMINISTRATORS_ONLY);
+
+  // Submit theme settings.
+  variable_set('theme_' . $default_theme . '_settings', ding2_theme_settings());
+  ding_base_rewrite_color_stylesheet();
+
+  // Disable overlay.
+  if (module_exists('overlay')) {
+    module_disable(array('overlay'));
+  }
+
+  // Ignore any rebuild messages.
+  node_access_needs_rebuild(FALSE);
+
+  // Ignore any other install messages.
+  drupal_get_messages();
+
+  // Clear caches.
+  drupal_flush_all_caches();
+}
+
+/**
+ * Implements hook_update_dependencies().
+ */
+function ding2_update_dependencies() {
+  // Update hook which enables a module if opensearch is present.
+  $dependencies['ding2'][7048] = array(
+    // The update hook that enables the opensearch module if no other search
+    // provider is present.
+    'ting' => 7014,
+  );
+
+  // Update hook which sets custom configuration for EU Cookie Compliance.
+  $dependencies['ding2'][7064] = array(
+    // Update hook that updates the configuration format for EU Cookie
+    // Compliance module.
+    'eu_cookie_compliance' => 7010,
+  );
+
+  return $dependencies;
+}
+
+/**
+ * Set default theme setting for ddbasic.
+ *
+ * @return array
+ *   The default theme settings.
+ */
+function ding2_theme_settings() {
+  return array(
+    'toggle_logo' => 1,
+    'toggle_name' => 1,
+    'toggle_slogan' => 0,
+    'toggle_node_user_picture' => 0,
+    'toggle_comment_user_picture' => 0,
+    'toggle_comment_user_verification' => 1,
+    'toggle_favicon' => 1,
+    'toggle_main_menu' => 1,
+    'toggle_secondary_menu' => 1,
+    'default_logo' => 1,
+    'default_favicon' => 1,
+    'latto_classes_menu_leaf' => 1,
+    'latto_classes_menu_has_children' => 1,
+    'latto_classes_menu_items_mlid' => 1,
+    'main_menu_sticky' => 0,
+    'load_html5js' => 1,
+    'load_selectivizr' => 1,
+    'load_scalefixjs' => 1,
+    'load_equalize' => 1,
+    'libraries_check_all' => 0,
+  );
+}
+
+/**
+ * Update the database with the newest translations.
+ */
+function ding2_translation_update() {
+  // Update build-in translation group.
+  $file = new stdClass();
+  $file->uri = DRUPAL_ROOT . '/profiles/ding2/translations/da.po';
+  $file->filename = basename($file->uri);
+  _locale_import_po($file, 'da', LOCALE_IMPORT_KEEP, 'default');
+
+  // Update field translation group.
+  $file = new stdClass();
+  $file->uri = DRUPAL_ROOT . '/profiles/ding2/translations/fields_da.po';
+  $file->filename = basename($file->uri);
+  _locale_import_po($file, 'da', LOCALE_IMPORT_KEEP, 'field');
+
+  // Update metatag translation group.
+  $file = new stdClass();
+  $file->uri = DRUPAL_ROOT . '/profiles/ding2/translations/metatags_da.po';
+  $file->filename = basename($file->uri);
+  _locale_import_po($file, 'da', LOCALE_IMPORT_KEEP, 'metatag');
+}
+
+/**
+ * Delete {system} records for a module.
+ *
+ * This function is to be used when removing a module from the code-base. It's
+ * needed because uninstalling a module that don't exists in code is not
+ * possible.
+ *
+ * Remember to run the clean-up that the module had in it's hook_uninstall
+ * before calling this function.
+ *
+ * @see https://www.drupal.org/node/2487215
+ */
+function ding2_remove_module($module) {
+  db_delete('system')
+    ->condition('name', $module)
+    ->condition('type', 'module')
+    ->execute();
+}
+
+/**
+ * Enable new shortcuts.
+ */
+function ding2_update_7000() {
+  $t = get_t();
+
+  $shortcut_set = shortcut_set_load(SHORTCUT_DEFAULT_SET_NAME);
+
+  $shortcut_set->links[] = array(
+    'link_path' => 'admin/appearance/settings/ddbasic',
+    'link_title' => $t('Theme settings'),
+    'weight' => -18,
+  );
+  $shortcut_set->links[] = array(
+    'link_path' => 'admin/config/user-interface/backgrounds',
+    'link_title' => $t('Backgrounds'),
+    'weight' => -19,
+  );
+
+  shortcut_set_save($shortcut_set);
+
+  return array();
+}
+
+/**
+ * Append default ddbasic theme settings.
+ */
+function ding2_update_7001() {
+  module_load_include('inc', 'system', 'system.admin');
+  $form_state = form_state_defaults();
+  $form_state['build_info']['args'][0] = 'ddbasic';
+  $form_state['values'] = array();
+  $form_state['values']['scheme'] = 'classic';
+  drupal_form_submit('system_theme_settings', $form_state);
+}
+
+/**
+ * Import our own translations.
+ */
+function ding2_update_7002() {
+  ding2_translation_update();
+}
+
+/**
+ * Enable and configure the cookie module.
+ */
+function ding2_update_7003() {
+  module_enable(array('cookiecontrol'));
+  ding2_set_cookie_page();
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7004() {
+  // Fixed month translation.
+  ding2_translation_update();
+}
+
+/**
+ * Enable and configure SSL proxy variables.
+ */
+function ding2_update_7005() {
+  module_enable(array('sslproxy'), TRUE);
+  variable_set('sslproxy_var', 'X-FORWARDED-PROTO');
+  variable_set('sslproxy_var_value', 'https');
+}
+
+/**
+ * Add "administrators" role to admin user.
+ */
+function ding2_update_7006() {
+  ding2_add_administrators_role(1);
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7007() {
+  // Fixed month translation.
+  ding2_translation_update();
+}
+
+/**
+ * Enable view unpublished module.
+ */
+function ding2_update_7008() {
+  module_enable(array('view_unpublished'), TRUE);
+}
+
+/**
+ * Enable redirect module.
+ */
+function ding2_update_7009() {
+  module_enable(array('redirect'));
+}
+
+/**
+ * Disable the cookiecontrol and enable and configure eu-cookie module.
+ */
+function ding2_update_7010() {
+  if (module_exists('cookiecontrol')) {
+    module_disable(array('cookiecontrol'));
+    drupal_uninstall_modules(array('cookiecontrol'));
+    variable_del('cookiecontrol_privacynode');
+    variable_del('cookiecontrol_text');
+    variable_del('cookiecontrol_fulltext');
+  }
+  module_enable(array('eu_cookie_compliance'));
+  ding2_set_cookie_page();
+  if (module_exists('secure_permissions')) {
+    secure_permissions_build_permissions();
+  }
+}
+
+/**
+ * Enable maintenance_mode_api module.
+ */
+function ding2_update_7011() {
+  module_enable(array('maintenance_mode_api'));
+}
+
+/**
+ * Update the eu-cookie-compliance Danish "No thanks" text to "Læs mere".
+ */
+function ding2_update_7012() {
+  $eu_cookie_compliance_da = variable_get('eu_cookie_compliance_da');
+  $eu_cookie_compliance_da['popup_disagree_button_message'] = 'Læs mere';
+  variable_set('eu_cookie_compliance_da', $eu_cookie_compliance_da);
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7013() {
+  ding2_translation_update();
+}
+
+/**
+ * Enable pagepreview module.
+ */
+function ding2_update_7014() {
+  module_enable(array('pagepreview'));
+}
+
+/**
+ * Enable search_api modules.
+ */
+function ding2_update_7015() {
+  module_enable(array(
+    'search_api',
+    'search_api_multi',
+    'search_api_db',
+    'search_api_views',
+  ));
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7016() {
+  ding2_translation_update();
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7017() {
+  ding2_translation_update();
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7018() {
+  ding2_translation_update();
+}
+
+/**
+ * Disable overlay.
+ */
+function ding2_update_7019() {
+  if (module_exists('overlay')) {
+    module_disable(array('overlay'));
+  }
+}
+
+/**
+ * Enable metatag and metatag_panels modules.
+ */
+function ding2_update_7020() {
+  module_enable(array('metatag', 'metatag_panels'));
+}
+
+/**
+ * Disable ding_bookmark module.
+ */
+function ding2_update_7021() {
+  module_disable(array('ding_bookmark'));
+}
+
+/**
+ * Enable P2 installer module.
+ */
+function ding2_update_7022() {
+  module_enable(array('ding_p2_installer'));
+}
+
+/**
+ * Enable admin_menu modules.
+ */
+function ding2_update_7023() {
+  module_enable(array('admin_menu', 'admin_menu_toolbar'));
+}
+
+/**
+ * Enable htmlmail module.
+ */
+function ding2_update_7024() {
+  module_enable(array('htmlmail'));
+}
+
+/**
+ * Enable environment indicator panel modules.
+ */
+function ding2_update_7025() {
+  if (module_exists('ddb_cp')) {
+    module_enable(array('environment_indicator'));
+  }
+}
+
+/**
+ * Enable mmeu module.
+ */
+function ding2_update_7026() {
+  module_enable(array('mmeu'));
+}
+
+/**
+ * Enable lazy_pane module.
+ */
+function ding2_update_7027() {
+  module_enable(array('lazy_pane'));
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7028() {
+  ding2_translation_update();
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7029() {
+  ding2_translation_update();
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7030() {
+  ding2_translation_update();
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7031() {
+  ding2_translation_update();
+}
+
+/**
+ * Enable Campaign module.
+ */
+function ding2_update_7032() {
+  module_enable(array('ding_campaign'));
+}
+
+/**
+ * Enable Mobilesearch module.
+ */
+function ding2_update_7034() {
+  module_enable(array('ding_mobilesearch'));
+}
+
+/**
+ * Set default variables for MobileSearch.
+ */
+function ding2_update_7035() {
+  $default_mobilesearch_agencyid = variable_get('ting_agency');
+  $mobilesearch_rest_key = variable_get('mobilesearch_rest_key', NULL);
+  variable_set('mobilesearch_rest_url', 'https://cmscontent.dbc.dk/');
+  variable_set('mobilesearch_rest_agency_id', $default_mobilesearch_agencyid);
+  if (empty($mobilesearch_rest_key)) {
+    variable_set('mobilesearch_rest_key', $default_mobilesearch_agencyid . "DDBCMS");
+  }
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7036() {
+  ding2_translation_update();
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7037() {
+  ding2_translation_update();
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7038() {
+  ding2_translation_update();
+}
+
+/**
+ * Enable E-resource module.
+ */
+function ding2_update_7039() {
+  module_enable(array('ding_eresource'));
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7040() {
+  ding2_translation_update();
+}
+
+/**
+ * Delete {system} records for ting_carousel modules.
+ */
+function ding2_update_7041() {
+  ding2_remove_module('ting_carousel');
+}
+
+/**
+ * Enable the ding_ddbasic module.
+ */
+function ding2_update_7042() {
+  module_enable(array('ding_ddbasic', 'ding_ddbasic_opening_hours'));
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7043() {
+  ding2_translation_update();
+}
+
+/**
+ * Activate toggle_name theme setting
+ */
+function ding2_update_7044() {
+  $default_theme = variable_get('theme_default', 'ddbasic');
+  $theme_settings = variable_get('theme_' . $default_theme . '_settings');
+  $theme_settings['toggle_name'] = 1;
+  variable_set('theme_' . $default_theme . '_settings', $theme_settings);
+}
+
+/**
+ * Disable toolbar module.
+ */
+function ding2_update_7045() {
+  module_disable(array('toolbar'));
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7046() {
+  ding2_translation_update();
+}
+
+/**
+ * Enable ding_app_content_rss module.
+ */
+function ding2_update_7047() {
+  module_enable(array('ding_app_content_rss'));
+}
+
+/**
+ * Enable ding_app_variables module.
+ */
+function ding2_update_7048() {
+  if (module_exists('opensearch')) {
+    module_enable(array('ding_app_variables'));
+  }
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7049() {
+  ding2_translation_update();
+}
+
+/**
+ * Disable and uninstall ding_mobilesearch module.
+ */
+function ding2_update_7050() {
+  // This function previously disabled, uninstalled and removed any
+  // traces of the module called ding_mobilesearch.
+  //
+  // The contents of this function has been removed due to the decision
+  // about removing the module has been reverted. Read more about this
+  // issue in https://platform.dandigbib.org/issues/3661.
+  //
+  // The function has been left empty, since some distrubitons have
+  // already had this update_hook() ran - but older sites has not.
+}
+
+/**
+ * Enable ding_app_variables module.
+ */
+function ding2_update_7051() {
+  // Rerun the update hook. Some sites may already have run 7048 but without
+  // ding2_update_dependencies and thus without ting_update_7014 and
+  // Opensearch.
+  ding2_update_7048();
+}
+
+/**
+ * Enable CustomError modules.
+ */
+function ding2_update_7052() {
+  module_enable(array('customerror', 'customerroralt'));
+  ding2_set_customerror_pages();
+}
+
+/**
+ * Expand all menu items in the main menu.
+ */
+function ding2_update_7053() {
+  db_update('menu_links')
+    ->fields(array('expanded' => 1))
+    ->condition('menu_name', 'main-menu')
+    ->execute();
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7054() {
+  ding2_translation_update();
+}
+
+/**
+ * Update our own translations.
+ */
+function ding2_update_7055() {
+  ding2_translation_update();
+}
+
+/**
+ * Enable ding_libs.
+ */
+function ding2_update_7056() {
+  module_enable(array('ding_libs'));
+}
+
+/**
+ * Enable Campaign plus module.
+ */
+function ding2_update_7057() {
+  module_enable(array('ding_campaign_plus'));
+}
+
+/**
+ * Enable Campaign plus extra modules.
+ */
+function ding2_update_7058() {
+  module_enable(array(
+    'ding_campaign_plus_auto',
+    'ding_campaign_plus_basic',
+    'ding_campaign_plus_facet',
+    'ding_campaign_plus_object',
+    'ding_campaign_plus_search',
+  ));
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7059() {
+  ding2_translation_update();
+}
+
+/**
+ * Remove ding_webtrends module and clean up related settings.
+ */
+function ding2_update_7060() {
+  ding2_remove_module('ding_webtrends');
+  variable_del('webtrends_domain');
+  variable_del('webtrends_onsitedoms');
+  variable_del('webtrends_dcs_id');
+}
+
+/**
+ * Ensure ding_webtrekk is activated on existing installs.
+ */
+function ding2_update_7061() {
+  module_enable(array('ding_webtrekk'));
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7062() {
+  ding2_translation_update();
+}
+
+/**
+ * Enable Section and Nodelist modules.
+ */
+function ding2_update_7063() {
+  module_enable(array(
+    'ding_sections',
+    'ding_nodelist',
+  ));
+}
+
+/**
+ * Update EU Cookie Compliance settings.
+ */
+function ding2_update_7064() {
+  if (!module_exists('i18n_variable')) {
+    module_enable(array('i18n_variable'));
+  }
+  $ecc_settings = i18n_variable_get('eu_cookie_compliance', 'da');
+  $ecc_settings['method'] = 'default';
+  $ecc_settings['show_disagree_button'] = 0;
+  i18n_variable_set('eu_cookie_compliance', $ecc_settings, 'da');
+}
+
+/**
+  * Update translations.
+ */
+function ding2_update_7065() {
+  ding2_translation_update();
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7066() {
+  ding2_translation_update();
+}
+
+/**
+ * Delete {system} records for ding_wayf module.
+ */
+function ding2_update_7067() {
+  variable_del('ding_wayf');
+  variable_del('wayf_hash');
+  ding2_remove_module('ding_wayf');
+}
+
+/**
+ * Disable GateWAYF modules and migrate config.
+ */
+function ding2_update_7068() {
+  $config = variable_get('ding_gatewayf_registration', FALSE);
+  if ($config) {
+    // Migrate configuration.
+    variable_set('ding_registration', $config);
+    variable_del('ding_gatewayf_registration');
+  }
+
+  // Remove config.
+  variable_del('ding_gatewayf');
+
+  // Remove modules.
+  ding2_remove_module('ding_gatewayf_registration');
+  ding2_remove_module('ding_gatewayf');
+}
+
+/**
+ * Enable adgangsplatformen module.
+ */
+function ding2_update_7069() {
+  module_enable(array('ding_adgangsplatformen'));
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7070() {
+  ding2_translation_update();
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7071() {
+  ding2_translation_update();
+}
+
+/**
+ * Enable Ding paragraphs module.
+ */
+function ding2_update_7072() {
+  module_enable(array('ding_paragraphs'));
+
+  // Revert features.
+  module_load_include('inc', 'ding2', 'ding2.install_callbacks');
+  _ding2_features_revert('ding_paragraphs');
+  _ding2_features_revert('ding_page');
+  _ding2_features_revert('ding_news');
+
+  // Clear cache before continuing update.
+  drupal_flush_all_caches();
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7073() {
+  ding2_translation_update();
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7074() {
+  ding2_translation_update();
+}
+
+/**
+ * Enable user registration module for sites using Adgangsplatformen.
+ */
+function ding2_update_7075() {
+  if (module_exists('ding_adgangsplatformen')) {
+    module_enable(array('ding_registration'));
+  }
+}
+
+/**
+ * Remove P2.
+ */
+function ding2_update_7076() {
+  // Remove the ding_entity_rating_action field.
+  field_delete_field('ding_entity_rating_action');
+  field_purge_batch(1);
+
+  // Only a subset of these should be enabled, but we try to disable and
+  // uninstall all just in case someone runs with an uncommon configuration.
+  $modules = [
+    'ding_interaction_manual',
+    'ding_notifications',
+    'ding_serendipity_ting_entity',
+    'ding_listrescue',
+    'ding_list',
+    'ding_p2_installer',
+    'ding_serendipity_lists',
+    'ding_serendipity_site',
+    'ding_entity_rating_loan_history',
+    'ting_openlist',
+    'ding_sharer',
+    'ding_message',
+    'ding_message_p2_installer',
+    'ding_serendipity',
+    'ding_user_consent',
+    'ding_serendipity_fallback',
+    'ding_serendipity_taxonomy_term',
+    'ding_entity_rating',
+    'ding_interaction',
+    'eck',
+    'message',
+    'similarterms',
+    'simplevar',
+  ];
+
+  module_disable($modules);
+  drupal_uninstall_modules($modules);
+}
+
+/**
+ * Revert modules to remove traces of p2.
+ */
+function ding2_update_7077() {
+  // Need to revert variables for these modules to get rid of the
+  // ding_serendipity_info extra field.
+  $modules = [
+    'ding_campaign_plus' => ['variable'],
+    'ding_paragraphs' => ['variable'],
+    'ding_page' => ['variable'],
+    'ding_event' => ['variable'],
+    'ding_library' => ['variable'],
+    'ding_groups' => ['variable'],
+    'ding_eresource' => ['variable'],
+    'ding_news' => ['variable'],
+  ];
+  features_revert($modules);
+}
+
+/**
+ * Remove old eck tables.
+ */
+function ding2_update_7078() {
+  // Eck doesn't drop it's dynamically created tables, so we'll do it here,
+  // just in case.
+  foreach (db_query('SHOW TABLES LIKE :pattern', [':pattern' => 'eck_%'])->fetchCol() as $table) {
+    db_drop_table($table);
+  }
+}
+
+/**
+ * Enable ding_react.
+ */
+function ding2_update_7079() {
+  module_enable(['ding_react']);
+}
+
+/**
+ * Use production services with ding_react.
+ */
+function ding2_update_7080() {
+  variable_set('ding_react_material_list_url', 'https://prod.materiallist.dandigbib.org');
+  variable_set('ding_react_follow_searches_url','https://prod.followsearches.dandigbib.org' );
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7081() {
+  ding2_translation_update();
+}
+
+/**
+ * Enable ting_smart_search.
+ */
+function ding2_update_7082() {
+  if (module_exists('opensearch')) {
+    module_enable(['ting_smart_search']);
+  }
+}
+
+/**
+ * Update EU cookie compliance settings.
+ */
+function ding2_update_7083() {
+  ding2_set_eu_cookie_compliance_settings();
+
+  // jquery_update will override the version of jquery.cookie that EU cookie
+  // compliance needs, if module weights are not changed. ECC 1.31 takes care
+  // of this on update and fresh install,  but 1.28 (we used in last release)
+  // only did on update. So we ensure it's called here if someone is testing
+  // from a fresh install on last release.
+  // https://www.drupal.org/project/eu_cookie_compliance/issues/2991113
+  eu_cookie_compliance_module_set_weight();
+
+  // Update the cookie name used by ECC to enforce all users to the new opt-out
+  // model and make them agree again. The name can be whatever so we choose the
+  // number of this update function where the settings were changed.
+  $ecc_settings = i18n_variable_get('eu_cookie_compliance', 'da', []);
+  $ecc_settings['cookie_name'] = 'cookie-agreed-7083';
+  i18n_variable_set('eu_cookie_compliance', $ecc_settings, 'da');
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7084() {
+  ding2_translation_update();
+}
+
+/**
+ * Enable cover service upload module.
+ */
+function ding2_update_7085() {
+  module_enable(['ddb_cover_upload']);
+}
+
+/**
+ * Switch to new cover module.
+ */
+function ding2_update_7086() {
+  module_disable(['ting_covers_addi']);
+  module_enable(['ting_covers_ddb']);
+}
+
+/**
+ * Remove Webtrends specific info from cookie page.
+ */
+function ding2_update_7087() {
+  ding2_update_cookie_page();
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7088() {
+  ding2_translation_update();
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7089() {
+  ding2_translation_update();
+}
+
+/**
+ * Update cookie compliance settings.
+ */
+function ding2_update_7090() {
+  ding2_set_eu_cookie_compliance_settings();
+}
+
+/**
+ * Update cookie compliance settings.
+ */
+function ding2_update_7091() {
+  $ecc_settings = i18n_variable_get('eu_cookie_compliance', 'da', []);
+
+  // Ensure that this is disabled as it will prevent changing the default text
+  // of the popup_agree_button_message on ECC settings form.
+  $ecc_settings['enable_save_preferences_button'] = FALSE;
+
+  // Change default text on popup agree and disagree buttons.
+  $ecc_settings['popup_agree_button_message'] = 'Acceptér alle';
+  $ecc_settings['disagree_button_label'] = 'Kun nødvendige';
+
+  i18n_variable_set('eu_cookie_compliance', $ecc_settings, 'da');
+}
+
+/**
+ * Enable ting_subsearch modules.
+ */
+function ding2_update_7092() {
+  if (module_exists('opensearch')) {
+    module_enable([
+      'ting_subsearch_bibdk',
+      'ting_subsearch_suggestions',
+      'ting_subsearch_translate',
+    ]);
+  }
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7093() {
+  ding2_translation_update();
+}
+
+/**
+ * Update default text on cookie page. A backup of existing will be created.
+ */
+function ding2_update_7094() {
+  ding2_update_cookie_page();
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7095() {
+  ding2_translation_update();
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7096() {
+  ding2_translation_update();
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7097() {
+  ding2_translation_update();
+}
+
+/**
+ * Update translations.
+ */
+function ding2_update_7098() {
+  ding2_translation_update();
+}

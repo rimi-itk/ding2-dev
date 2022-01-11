@@ -1,0 +1,840 @@
+<?php
+
+/**
+ * @file
+ * Ding list.
+ */
+
+use Drupal\xautoload\Adapter\LocalDirectoryAdapter;
+use DingList\DingListElement;
+
+include_once 'ding_list.features.inc';
+
+// Core defined types of lists.
+// Manual user lists.
+define('DING_LIST_TYPE_USER_LIST', 'user_list');
+// Search strings.
+define('DING_LIST_TYPE_SEARCHES', 'user_searches');
+// Loan history.
+define('DING_LIST_TYPE_LOAN_HISTORY', 'user_loan_history');
+// Read books. This is hardcoded intentionally and exceptionally.
+define('DING_LIST_TYPE_BOOKS_READ', 'books_read');
+// Check list. This is hardcoded intentionally and exceptionally.
+define('DING_LIST_TYPE_REMEMBER', 'remember');
+define('DING_LIST_TYPE_LISTS', 'lists_list');
+define('DING_LIST_TYPE_FOLLOW_AUTHOR', 'follow_author');
+
+// Extend here with care.
+define('DING_LIST_OPERATION_DELETE', 'delete');
+define('DING_LIST_OPERATION_ATTACH', 'attach');
+define('DING_LIST_OPERATION_ATTACH_TING_OBJECT', 'attach_ting_object');
+define('DING_LIST_OPERATION_DETACH', 'detach');
+define('DING_LIST_OPERATION_SORT', 'sort');
+define('DING_LIST_OPERATION_FOLLOW', 'follow');
+define('DING_LIST_OPERATION_AUTO_CREATE', 'auto_create');
+define('DING_LIST_OPERATION_CHECK_EXISTS', 'check_exists');
+define('DING_LIST_OPERATION_SHARE', 'share');
+define('DING_LIST_OPERATION_EDIT_TITLE', 'edit_title');
+
+// Carousel behaviour.
+define('DING_LIST_CAROUSEL_CHUNK_SIZE', 6);
+
+/**
+ * View list permission.
+ */
+define('DING_LIST_PERMISSION_VIEW', 'view');
+/**
+ * Edit list permission.
+ */
+define('DING_LIST_PERMISSION_EDIT', 'edit');
+/**
+ * Is owner list permission.
+ */
+define('DING_LIST_PERMISSION_OWNER', 'owner');
+
+// Include seperate hook files.
+require_once __DIR__ . '/include/form.inc';
+require_once __DIR__ . '/include/functions.inc';
+require_once __DIR__ . '/ding_list.field.inc';
+
+/**
+ * Implements hook_menu().
+ */
+function ding_list_menu() {
+  $items = array();
+
+  // A simple base for all menu calls related to editing a list.
+  $edit_list_base = array(
+    'access arguments' => array(2),
+    'access callback' => 'ding_list_user_has_list_edit_access',
+    'file' => 'include/menu_callbacks.inc',
+    'delivery callback' => 'ajax_deliver',
+    'type' => MENU_CALLBACK,
+  );
+
+  // Set the order of a list.
+  // It gets the ordered array as a POST through ajax.
+  $items['dinglist/set_order/%'] = array_merge($edit_list_base, array(
+    'title' => 'Set elements order callback',
+    'page callback' => 'ding_list_set_order_callback',
+    'page arguments' => array(2),
+  ));
+
+  $items['dinglist/login/%'] = array(
+    'title' => 'Login',
+    'page callback' => 'ding_list_login',
+    'access callback' => TRUE,
+    'page arguments' => array(2),
+  );
+
+  $items['dinglist/attach/%/%/%'] = array_merge($edit_list_base, array(
+    'title' => 'Attach elements callback',
+    'page callback' => 'ding_list_attach_element_callback',
+    'page arguments' => array(2, 3, 4),
+    'access arguments' => array(3),
+  ));
+
+  $items['ding-list/private-share-message/%/%'] = array_merge($edit_list_base, array(
+    'title' => 'Share message',
+    'page callback' => 'ding_list_private_share_message_callback',
+    'page arguments' => array(2, 3),
+  ));
+
+  $items['ding-list/share-list/%/%/%'] = array_merge($edit_list_base, array(
+    'title' => 'Share list',
+    'page callback' => 'ding_list_share_list_callback',
+    'page arguments' => array(2, 3, 4),
+    'access arguments' => array(3),
+    'delivery callback' => 'ajax_deliver',
+  ));
+
+  $items['ding-list/login-attach/%/%'] = array(
+    'title' => 'Login create',
+    'page callback' => array('ding_list_login_attach'),
+    'page arguments' => array(2, 3),
+    'delivery callback' => 'ajax_deliver',
+    'access callback' => TRUE,
+  );
+
+  $items['ding-list/carousel/ajax/%/%'] = array(
+    'title' => 'Show carousel results',
+    'page callback' => 'ding_list_carousel_ajax',
+    'page arguments' => array(3, 4),
+    'access callback' => 'ding_list_user_has_access',
+    'access arguments' => array(3),
+    'file' => 'include/menu_callbacks.inc',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['list/%/toggle-not-public'] = array(
+    'title' => 'Toggle public list settings',
+    'page callback' => 'ding_list_toggle_not_public',
+    'page arguments' => array(1),
+    'access arguments' => array('ding_list administer public lists'),
+    'file' => 'include/menu_callbacks.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * Handle list attachment for anonymous users.
+ */
+function ding_list_login_attach($type, $value) {
+  $commands = array();
+
+  if (!user_is_logged_in()) {
+    $commands[] = ajax_command_ding_user_authenticate('');
+    return array('#type' => 'ajax', '#commands' => $commands);
+  }
+
+  module_load_include('inc', 'ding_list', 'include/menu_callbacks');
+
+  // Use the specific list type from the get parameter.
+  // The list type and element type doesn't always match, which is why we need
+  // the extra parameter.
+  $list_type = !empty($_GET['list_type']) ? $_GET['list_type'] : $type;
+
+  $list = ding_list_get_list($list_type);
+  return ding_list_attach_element_callback($type, $list->getId(), $value);
+}
+
+/**
+ * Ding list login information page.
+ */
+function ding_list_login($list_id) {
+  return t('You need to login to view the list.');
+}
+
+/**
+ * Check if the current user has edit permissions to the list id.
+ *
+ * @param int $list_id
+ *   ID of the list.
+ *
+ * @return bool
+ *   TRUE or FALSE depending the rights.
+ */
+function ding_list_user_has_list_edit_access($list_id) {
+  if (!is_numeric($list_id)) {
+    return TRUE;
+  }
+
+  $list = ding_list_get_list($list_id);
+  if (!empty($list)) {
+    return ding_list_user_has_access($list, DING_LIST_PERMISSION_EDIT);
+  }
+  else {
+    return TRUE;
+  }
+}
+
+/**
+ * Get the list operations array.
+ *
+ * This array works as a matrix, for which operations are permitted on which
+ * list.
+ *
+ * @return array
+ *   The mapped array.
+ */
+function ding_list_list_operations() {
+  $modules = module_implements('ding_list_operations');
+
+  $operations = array();
+  foreach ($modules as $module) {
+    $more_operations = module_invoke($module, 'ding_list_operations');
+    $operations = array_merge($operations, $more_operations);
+  }
+
+  return $operations;
+}
+
+/**
+ * Get the different list types and their available operations.
+ */
+function ding_list_ding_list_operations() {
+  return array(
+    DING_LIST_TYPE_USER_LIST => array(
+      DING_LIST_OPERATION_EDIT_TITLE => TRUE,
+      DING_LIST_OPERATION_DELETE => TRUE,
+      DING_LIST_OPERATION_ATTACH => array('ting_object'),
+      DING_LIST_OPERATION_DETACH => TRUE,
+      DING_LIST_OPERATION_SORT => TRUE,
+      DING_LIST_OPERATION_SHARE => TRUE,
+      '_data' => array(
+        'description' =>
+        t('Add objects to your own lists as you browse the website.') .
+        " " . l(t("Create new lists to group objects"), "list/create"),
+
+      ),
+    ),
+    DING_LIST_TYPE_LISTS => array(
+      DING_LIST_OPERATION_ATTACH => array('ding_list'),
+      DING_LIST_OPERATION_DETACH => TRUE,
+      DING_LIST_OPERATION_SORT => TRUE,
+      DING_LIST_OPERATION_AUTO_CREATE => TRUE,
+      DING_LIST_OPERATION_FOLLOW => TRUE,
+      '_data' => array(
+        'default_title' => t('Lists I follow'),
+        'description' => t('When you find interesting lists other users maintain, you can follow them and recieve notifications when the author adds new materials to the list.'),
+      ),
+    ),
+    DING_LIST_TYPE_FOLLOW_AUTHOR => array(
+      DING_LIST_OPERATION_ATTACH => array('follow_author'),
+      DING_LIST_OPERATION_DETACH => TRUE,
+      DING_LIST_OPERATION_SORT => TRUE,
+      DING_LIST_OPERATION_AUTO_CREATE => TRUE,
+      DING_LIST_OPERATION_FOLLOW => TRUE,
+      DING_LIST_OPERATION_CHECK_EXISTS => TRUE,
+      '_data' => array(
+        'default_title' => t('Authors I follow'),
+        'description' => t('Follow authors to get notifications when new materials are relased by the author. To follow an author, find a material by the author and select follow author.'),
+        'response_success' => 'Author added to !name',
+      ),
+    ),
+    DING_LIST_TYPE_SEARCHES => array(
+      DING_LIST_OPERATION_ATTACH => array('search_query'),
+      DING_LIST_OPERATION_DETACH => TRUE,
+      DING_LIST_OPERATION_SORT => TRUE,
+      DING_LIST_OPERATION_AUTO_CREATE => TRUE,
+      DING_LIST_OPERATION_FOLLOW => TRUE,
+      '_data' => array(
+        'default_title' => t('Searches I follow'),
+        'description' => t('You can save your searches and get notifications when new materiales matches your search query. Search for something and use facets to narrow your search. Select "add to searches I follow" to save your query.'),
+      ),
+    ),
+    DING_LIST_TYPE_LOAN_HISTORY => array(
+      DING_LIST_OPERATION_DETACH => TRUE,
+      DING_LIST_OPERATION_AUTO_CREATE => ding_provider_implements('historical_loans', 'get'),
+      '_data' => array(
+        'default_title' => t('Loan history'),
+        'description' => t('Find your previous loans here. You can enable/disable the history in your profile.'),
+      ),
+    ),
+    DING_LIST_TYPE_BOOKS_READ => array(
+      DING_LIST_OPERATION_ATTACH => array('ting_object'),
+      DING_LIST_OPERATION_DETACH => TRUE,
+      DING_LIST_OPERATION_SORT => TRUE,
+      DING_LIST_OPERATION_AUTO_CREATE => TRUE,
+      DING_LIST_OPERATION_SHARE => TRUE,
+      '_data' => array(
+        'default_title' => t("Books I've read"),
+        'description' => t('Keep a collection of books you have read here.'),
+      ),
+    ),
+    DING_LIST_TYPE_REMEMBER => array(
+      DING_LIST_OPERATION_ATTACH => array('ting_object'),
+      DING_LIST_OPERATION_DETACH => TRUE,
+      DING_LIST_OPERATION_SORT => TRUE,
+      DING_LIST_OPERATION_AUTO_CREATE => TRUE,
+      DING_LIST_OPERATION_SHARE => TRUE,
+      '_data' => array(
+        'default_title' => t('Read later'),
+        'description' => t('Keep a collection of books you want to read later here.'),
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function ding_list_ctools_plugin_directory($owner, $plugin_type) {
+  return 'plugins/' . $plugin_type;
+}
+
+/**
+ * Implements hook_user_login().
+ *
+ * Synchronize with openlist, create missing lists and update the historical
+ * loans list.
+ */
+function ding_list_user_login(&$edit, $account) {
+  // The hook_user_login() is triggered during installation, this happens prior
+  // to openlist being correctly setup and causes warnings during install of
+  // ding2.
+  // To avoid this, we don't create lists and try to sync with openlist during
+  // installation.
+  if (drupal_installation_attempted()) {
+    return;
+  }
+
+  ding_provider_invoke('openlist', 'update_user', $account);
+
+  // Create any missing auto created lists.
+  ding_list_setup_autocreated($account);
+
+  if (ding_user_consent_has_consent('loan_history_store')) {
+    // Update the historical loans.
+    ding_list_update_historical_loans($account);
+  }
+
+  ding_list_import_bookmarks($account);
+}
+
+/**
+ * Import from bookmarks.
+ *
+ * We need the user credentials, which is why this conversion is lazy and
+ * not performed on install.
+ */
+function ding_list_import_bookmarks($account) {
+  // Using simplevar module here, because compatibility with lazy_vars is
+  // broken, will be fixed later.
+  // If there is no flag content to import then back out.
+  // This happens on new sites where the flag module has never been installed.
+  if (!db_table_exists('flag_content')) {
+    simplevar_set('ding_list_import_bookmarks', $account->uid, TRUE);
+    return;
+  }
+
+  // Bail out if the bookmarks is already imported.
+  if (simplevar_get('ding_list_import_bookmarks', $account->uid, FALSE) === TRUE) {
+    return;
+  }
+
+  // Fetch all the content_ids from the flag_content table.
+  // We use raw queries here as the flag module has been disabled and its API is
+  // not available.
+  $query = db_select('flag_content', 'fc');
+  $query->join('flags', 'f', 'f.fid = fc.fid');
+  $cids = $query
+    ->fields('fc', array('content_id'))
+    ->condition('fc.uid', $account->uid)
+    ->condition('fc.content_type', 'ding_entity')
+    ->condition('f.name', 'bookmark')
+    ->orderBy('fc.timestamp', 'DESC')
+    ->execute()->fetchCol();
+
+  // Add the bookmarks to the remember ding list.
+  try {
+    $list = ding_list_get_list(DING_LIST_TYPE_REMEMBER);
+
+    if ($list) {
+      $type_info = ding_entity_info('ding_entity');
+      foreach (entity_load($type_info['entity_type'], $cids) as $entity) {
+        $list->attachElement(DingListElement::fromDataArray(array(
+          'type' => 'ting_object',
+          'value' => $entity->ding_entity_id,
+        )))->save();
+      }
+
+      simplevar_set('ding_list_import_bookmarks', $account->uid, TRUE);
+    }
+  }
+  catch (Exception $e) {
+    watchdog_exception('ding_list', $e);
+  }
+}
+
+/**
+ * Implements hook_ding_user_consent_changed().
+ */
+function ding_list_ding_user_consent_changed($consent) {
+  // If loan_history_store consent has been revoked, remove all lists.
+  if (isset($consent['loan_history_store'])) {
+    if ($consent['loan_history_store'] === FALSE) {
+      $list = ding_list_get_list(DING_LIST_TYPE_LOAN_HISTORY);
+      if ($list !== FALSE) {
+        if (!$list->delete()) {
+          drupal_set_message(t("An error occurred while deleting your list. Please contact the administrator if this problem persists."), 'error');
+          return;
+        }
+      }
+
+      drupal_set_message(t("Your historical loans list has been deleted."));
+    }
+    else {
+      // Update the historical loans.
+      ding_list_update_historical_loans();
+    }
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function ding_list_theme($existing, $type, $theme, $path) {
+  return array(
+    'ding_list_element' => array(
+      'file' => 'theme/theme.inc',
+      'template' => 'templates/ding-list-element',
+      'variables' => array(
+        // @TODO display constants.
+        'display' => 'default',
+        'element' => NULL,
+      ),
+    ),
+    'ding_list_list' => array(
+      'file' => 'theme/theme.inc',
+      'template' => 'templates/ding-list-list',
+      'variables' => array(
+        'display' => 'default',
+        'list' => NULL,
+      ),
+    ),
+    'ding_list_shared_permissions_table' => array(
+      'render element' => 'element',
+    ),
+    'ding_list_add_button' => array(
+      'file' => 'theme/theme.inc',
+      'template' => 'templates/ding-list-add-button',
+      'variables' => array(
+        'type' => NULL,
+        'value' => NULL,
+        'title' => NULL,
+        'value_title' => FALSE,
+        'options' => FALSE,
+        'single_link' => FALSE,
+      ),
+    ),
+    'ding_list_message' => array(
+      'file' => 'theme/theme.inc',
+      'variables' => array('message' => ''),
+    ),
+    'ding_list_permission_description' => array(
+      'file' => 'theme/theme.inc',
+      'variables' => array('message' => ''),
+    ),
+    'ding_list_label_value' => array(
+      'file' => 'theme/theme.inc',
+      'variables' => array('label' => NULL, 'value' => NULL),
+    ),
+    'ding_list_data' => array(
+      'file' => 'theme/theme.inc',
+      'template' => 'templates/ding-list-data',
+      'variables' => array('list' => NULL),
+    ),
+    'ding_list_create_info' => array(
+      'file' => 'theme/theme.inc',
+      'variables' => array('list' => NULL),
+    ),
+    'ding_list_promote_lists' => array(
+      'variables' => array(),
+    ),
+  );
+}
+
+/**
+ * Implements hook_ding_entity_buttons().
+ */
+function ding_list_ding_entity_buttons($type, $entity, $view_mode = 'default', $widget = 'default') {
+  if ($type == 'ding_entity') {
+    $return = array();
+    $return[] = array(
+      '#theme' => 'ding_list_add_button',
+      '#type' => 'ting_object',
+      '#value' => $entity->ding_entity_id,
+    );
+
+    return $return;
+  }
+}
+
+/**
+ * Implements hook_permission().
+ */
+function ding_list_permission() {
+  return array(
+    'ding_list reset lists' => array(
+      'title' => t('Reset user lists'),
+    ),
+    'ding_list administer public lists' => array(
+      'title' => t('Administer public lists'),
+    ),
+    'ding_list view all lists' => array(
+      'title' => t('View all lists'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_list_mail().
+ */
+function ding_list_mail($key, &$message, $params) {
+  global $user;
+
+  switch ($key) {
+    case 'share':
+      $username = $user->name;
+      if (isset($user->data)) {
+        if (is_string($user->data)) {
+          $data = unserialize($user->data);
+        }
+        else {
+          $data = $user->data;
+        }
+
+        if (!empty($data) && isset($data['display_name'])) {
+          $username = $data['display_name'];
+        }
+      }
+
+      $list = $params['list'];
+      $message['subject'] = t('@user has shared a personal list with you at @library', array(
+        '@user' => $username,
+        '@library' => variable_get('site_name', ''),
+      ));
+
+      if (!empty($user->mail)) {
+        $message['headers']['reply-to'] = $user->mail;
+      }
+
+      $message['subject'] = $params['subject'];
+      $message['body'][] = nl2br($params['text']);
+      break;
+  }
+}
+
+/**
+ * Implements hook_ding_interaction_info().
+ */
+function ding_list_ding_interaction_info() {
+  $active = user_is_logged_in();
+  return array(
+    'title' => t('Create your own lists'),
+    'description' => t('Promote creating your own lists to users with no personal lists yet.'),
+    'css_class' => 'complete-info',
+    'active' => $active,
+  );
+}
+
+/**
+ * Implements hook_ding_interaction_view().
+ */
+function ding_list_ding_interaction_view() {
+  $user_lists = ding_list_get_list(DING_LIST_TYPE_USER_LIST);
+  if (empty($user_lists)) {
+    $interaction = array(
+      '#theme' => 'ding_list_promote_lists',
+    );
+    return drupal_render($interaction);
+  }
+  return '';
+}
+
+/**
+ * Theme function for ding_list_promote_lists.
+ */
+function theme_ding_list_promote_lists() {
+  return "<div class='description'>" .
+    t("Did you know you can create your own lists and add objects to them?") .
+    "</div><ul class='actions'><li>" . l(t('Create my own list'), 'list/create') . "</li></ul>";
+}
+
+/**
+ * Change the html header for lists, to ensure og:url and og:description.
+ */
+function ding_list_html_head_alter(&$head_elements) {
+  // If the current page is a list.
+  if (arg(0) === 'list' && is_numeric(arg(1)) && !arg(2)) {
+    $list = ding_list_get_list(arg(1));
+    $head_elements['ogurl'] = array(
+      '#type' => 'html_tag',
+      '#tag' => 'meta',
+      '#attributes' => array(
+        'property' => 'og:url',
+        'content' => url('list/' . arg(1), array('absolute' => TRUE)),
+      ),
+    );
+
+    if (!empty($list->getNote())) {
+      $head_elements['ogdescription'] = array(
+        '#type' => 'html_tag',
+        '#tag' => 'meta',
+        '#attributes' => array(
+          'property' => 'og:description',
+          'content' => $list->getNote(),
+        ),
+      );
+    }
+  }
+}
+
+/**
+ * Convert old cql.
+ *
+ * We need to convert old cql to new cql. Old cql will occur if ding_list has
+ * been used on an environment using the old cql before upgrading.
+ */
+function ding_list_convert_cql($string) {
+  $pattern = '/(\s+?|^)(\(?dc|\(?phrase)\.(.+?)\s?="?(.+?)"?(\s+|$)(AND|OR|NOT|$)/';
+  $string = preg_replace_callback($pattern, 'ding_list_convert_cql_replace_callback', $string);
+  $string = preg_replace('/\d{6}:I?(\d+)/', '870970-basis:$1', $string);
+
+  return $string;
+}
+
+/**
+ * Customm preg replace callback for cql replacements.
+ */
+function ding_list_convert_cql_replace_callback($matches) {
+  list($nop, $pre, $dc, $facet, $value, $post, $next) = $matches;
+
+  $dc = str_replace('dc', 'facet', $dc);
+  if (substr($value, -1) == ')'
+    && substr_count($value, '(') != substr_count($value, ')')
+  ) {
+    $post = ')' . $post;
+    $value = substr($value, 0, -1);
+  }
+
+  return $pre . $dc . '.' . $facet . '="' . $value . '"' . $post . $next;
+}
+
+/**
+ * Implements hook_ding_list_add_to_list_data().
+ */
+function ding_list_ding_list_add_to_list_data_alter(&$data, $context) {
+  switch ($context['type']) {
+    case 'ting_object':
+      if (user_access('use personalisation')) {
+        $ting_object = ting_object_load($context['value']);
+
+        // Add a follow action for authors.
+        $data = array_merge(
+          $data,
+          ding_list_get_add_to_list_ting_object_creators($ting_object)
+        );
+
+        $data[] = array(
+          'custom' => array(
+            'title' => '<div class="list-title">' . t('New list') . '</div><div class="add-to-list-button button">' . t('Add to new list') . '</div>',
+            'href' => 'list/create',
+            'attributes' => array(
+              'class' => array(),
+            ),
+            'query' => array('at' => $context['type'], 'av' => $context['value']),
+            'html' => TRUE,
+          ),
+        );
+      }
+      elseif (!user_is_logged_in()) {
+        $login_path = '#';
+        if (module_exists('ding_adgangsplatformen')) {
+          $login_path = '/' . DING_ADGANGSPLATFORMEN_LOGIN_URL;
+        }
+
+        $data[] = array(
+          'custom' => array(
+            'title' => '<div class="list-title">' . t('Add to list') . '</div>',
+            'href' => $login_path,
+            'attributes' => array(
+              'class' => array('open-login'),
+            ),
+            'query' => array(drupal_get_destination()),
+            'external' => FALSE,
+            'html' => TRUE,
+          ),
+        );
+      }
+      break;
+
+    case 'search_query':
+      $list_info = ding_list_ding_list_operations()[DING_LIST_TYPE_SEARCHES];
+      if (!user_is_logged_in()) {
+        $data[] = array(
+          'custom' => array(
+            'title' => t(
+              'Add to @list',
+              array('@list' => $list_info['_data']['default_title'])
+            ),
+            'href' => 'ding-list/login-attach/' . $context['type'] . '/' . $context['value'],
+            'attributes' => array(
+              'class' => array('use-ajax'),
+            ),
+            'query' => array(
+              'title' => $context['value_title'],
+              'list_type' => DING_LIST_TYPE_SEARCHES,
+            ),
+            'html' => TRUE,
+          ),
+        );
+      }
+      break;
+  }
+}
+
+/**
+ * Implements hook_panels_pane_content_alter().
+ */
+function ding_list_panels_pane_content_alter($content, $pane, $args, $contexts) {
+  if ($pane->type == 'user_overview' && variable_get('user_consent_activate') && ding_user_consent_has_consent(DING_USER_CONSENT_LOAN_HISTORY_STORE, $contexts['context_user_1']->data)) {
+    $list = ding_list_get_list(DING_LIST_TYPE_LOAN_HISTORY, $contexts['context_user_1']->data);
+    $list_label = check_plain($list->getTitle());
+    $loan_history_link = array(
+      'data' =>
+      '<a href="' . url('list/' . $list->getId()) . '" class="signature-label"><span class="icon"></span>' . $list_label . '</a>',
+      'class' => array(drupal_html_class($list->getType())),
+    );
+    $items = &$content->content['#items'];
+    $items = array_slice($items, 0, count($items) - 1, TRUE) +
+            array($list->getType() => $loan_history_link) +
+            array_slice($items, count($items) - 2, count($items) - 1, TRUE);
+  }
+}
+
+/**
+ * Implements hook_xautoload().
+ */
+function ding_list_xautoload(LocalDirectoryAdapter $adapter) {
+  $adapter->absolute()->addPsr4('DingList\\', drupal_get_path('module', 'ding_list') . '/src');
+}
+
+/**
+ * Implements hook_ding_provider_user().
+ */
+function ding_list_ding_provider_user() {
+  return array(
+    'openlist' => array(
+      'required' => TRUE,
+      'install time setup' => FALSE,
+    ),
+  );
+}
+
+/**
+ * Implements hook_user_delete().
+ */
+function ding_list_user_delete($account) {
+  ding_provider_invoke('openlist', 'reset_user', $account);
+}
+
+/**
+ * Check if a user has access to reset lists on account.
+ */
+function ding_list_reset_lists_access($target_account, $account = NULL) {
+  if ($account === NULL) {
+    global $user;
+    $account = user_load($user->uid);
+  }
+
+  return user_access('ding_list reset lists', $account)
+    || ($account->uid == $target_account->uid);
+}
+
+/**
+ * Implements form_FORM_ID_alter().
+ *
+ * Preparing the "add search to list" shortcut for header search.
+ */
+function ding_list_form_search_block_form_alter(&$form, &$form_state, $form_id) {
+  $current_page = page_manager_get_current_page();
+
+  if (empty($current_page['contexts']) || empty($context = reset($current_page['contexts']))) {
+    return;
+  }
+
+  $render_variables = ding_list_search_query_add_button($context);
+
+  if (empty($render_variables)) {
+    return;
+  }
+
+  $add_button = render($render_variables);
+
+  if (empty($add_button)) {
+    return;
+  }
+
+  $form['search_block_form']['#field_suffix'] = $add_button;
+  $form['#attributes']['class'][] = 'search-block-form';
+  $form['#attributes']['class'][] = 'has-add-list';
+}
+
+/**
+ * Custom function for preparing search_query list render array.
+ */
+function ding_list_search_query_add_button($context) {
+  if (!property_exists($context, 'keyword') ||
+    $context->keyword !== 'keywords' ||
+    !property_exists($context, 'data')) {
+    return NULL;
+  }
+
+  $keywords = $context->data;
+
+  $facets = drupal_http_build_query(drupal_get_query_parameters());
+
+  if (!empty($facets)) {
+    $keywords .= '?' . $facets;
+  }
+
+  $title = $context->data;
+  $query = drupal_get_query_parameters();
+  if (!empty($query['facets'])) {
+    foreach ($query['facets'] as &$facet) {
+      $facet = substr($facet, strpos($facet, ':') + 1);
+    }
+    $title .= ', ' . implode(', ', $query['facets']);
+  }
+
+  return array(
+    '#theme' => 'ding_list_add_button',
+    '#type' => 'search_query',
+    '#single_link' => TRUE,
+    '#value' => $keywords,
+    '#value_title' => $title,
+  );
+}

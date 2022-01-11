@@ -1,0 +1,85 @@
+//
+// Set variables
+
+// ==========================================================================
+// Color
+// ==========================================================================
+
+$black: #000;
+$black-overlay: rgba(0, 0, 0, 0.8);
+$black-overlay-dark: rgba(0, 0, 0, 0.9);
+
+$color-standard-text: #474747;
+
+$charcoal: #262626;
+$charcoal-opacity-dark: rgba(38, 38, 38, 0.8);
+$charcoal-opacity-light: rgba(38, 38, 38, 0.2);
+$white: #fff;
+$white-opacity-dark: rgba(255, 255, 255, 0.54);
+$white-opacity-light: rgba(255, 255, 255, 0.2);
+
+$grey-light: #f1f2f2;
+$grey: #e5e5e5;
+$grey-medium: #ccc;
+$grey-dark: #808285;
+$grey-darker: #505050;
+
+$green: #24d273;
+$green-text: darken($green, 10);
+$red: #e22045;
+$red-text: $red;
+$red-error: darken($red, 15%);
+$yellow: #ffca5f;
+$yellow-text: darken($yellow, 15);
+
+// The color-module is dependent on the following five variables and their specific values. Therefore they may not be altered.
+
+$color-primary: #4d898e;
+$color-secondary: #f66d70;
+
+$color-text: #262627;
+$color-text-link: #4d898f;
+$color-text-link-on-dark: #4d898d;
+$color-text-on-primary: #fffff1;
+$color-text-on-secondary: #fffff2;
+
+// ==========================================================================
+// Distance
+// ==========================================================================
+$header-height: 148px;
+$topbar-height: 64px;
+$second-level-menu-height: 61px;
+$distance-paragraph: 30px;
+$element-height: 54px;
+$wrapper-width: 90%;
+$search-form-extended-height: 84px;
+$toolbar-height: 65px;
+$admin-menu-height: 29px;
+
+$dynamic-background-width: 1250px;
+
+// ==========================================================================
+// Misc
+// ==========================================================================
+$round-corner: 5px;
+$box-shadow: 0 5px 15px 0 rgba(0, 0, 0, 0.3);
+$box-padding: 15px;
+$disabled: 0.3;
+
+// ==========================================================================
+// Transition
+// ==========================================================================
+$speed: 300ms;
+$speed-fast: 150ms;
+$hover-delay: 400ms;
+$ease: $ease-out-quart;
+
+// ==========================================================================
+// z-index
+// ==========================================================================
+$z-below: 50;
+$z-content: 100;
+$z-above: 150;
+$z-header: 300;
+$z-overlay: 900;
+$z-debug: 999;

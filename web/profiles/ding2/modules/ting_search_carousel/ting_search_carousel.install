@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the ting_search_carousel module.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function ting_search_carousel_install() {
+  @drupal_mkdir('public://ting_search_carousel');
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function ting_search_carousel_uninstall() {
+  @drupal_rmdir('public://ting_search_carousel');
+}
+
+/**
+ * Implements hook_enable().
+ */
+function ting_search_carousel_enable() {
+  // Add our view to the list of allowed panes in the IPE.
+  $selected_panes = _ding_ipe_filter_selected_panes();
+  $selected_panes['materialer:carousel'] = 'materialer:carousel';
+  variable_set('ding_ipe_filter_panes_selected', $selected_panes);
+}
+
+/**
+ * Obsoleted update hook.
+ */
+function ting_search_carousel_update_7001() {
+}
+
+/**
+ * Obsoleted update hook.
+ */
+function ting_search_carousel_update_7002() {
+}
+
+/**
+ * Ensure ding_carousel is enabled.
+ */
+function ting_search_carousel_update_7003() {
+  module_enable(array('ding_carousel'));
+}
+
+/**
+ * Obsoleted update hook.
+ */
+function ting_search_carousel_update_7004() {
+}
+
+/**
+ * Migrate front page carousel.
+ */
+function ting_search_carousel_update_7101() {
+  // Migrate panes by updating their configuration.
+  $query = db_select('panels_pane', 'p')
+    ->condition('type', 'carousel')
+    ->condition('subtype', 'carousel')
+    ->fields('p', array('pid', 'configuration'));
+
+  foreach ($query->execute() as $pane) {
+    $configuration = unserialize($pane->configuration);
+    $configuration['searches'] = variable_get('ting_carousel_search_queries', array());
+    $configuration['settings'] = array(
+      'transition' => variable_get('ting_search_carousel_transition', 'fade'),
+    );
+
+    db_update('panels_pane')
+      ->fields(array('configuration' => serialize($configuration)))
+      ->condition('pid', $pane->pid)
+      ->execute();
+  }
+
+  // Delete now obsolete variables.
+  variable_del('ting_carousel_search_queries_hidden');
+  variable_del('ting_carousel_search_queries');
+  variable_del('ting_search_carousel_tabs_position');
+  variable_del('ting_search_carousel_description_toggle');
+  variable_del('ting_search_carousel_transition');
+  variable_del('ting_search_carousel_server_render');
+
+  // Ensure that the pane can be selected in IPE.
+  ting_search_carousel_enable();
+}

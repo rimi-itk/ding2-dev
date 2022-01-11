@@ -1,0 +1,101 @@
+<?php
+/**
+ * @file
+ * Provide covers from the ADDI service.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function ting_covers_addi_menu() {
+  $items = array();
+
+  $items['admin/config/ting/covers/addi'] = array(
+    'title' => 'ADDI service',
+    'description' => 'Configure integration with the ADDI service.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ting_covers_addi_admin_settings_form'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'ting_covers_addi.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_ding_install_tasks().
+ */
+function ting_covers_addi_ding_install_tasks() {
+  module_load_include('inc', 'ting_covers_addi', 'ting_covers_addi.admin');
+  return array(
+    'ting_covers_addi_admin_settings_form' => array(
+      'display_name' => st('ADDI service settings'),
+      'type' => 'form',
+      'file' => drupal_get_path('module', 'ting_covers_addi') . '/ting_covers_addi.admin.inc',
+    ),
+  );
+}
+
+/**
+ * Implements hook_ting_covers().
+ *
+ * Fetch covers from AdditionalInformation service.
+ */
+function ting_covers_addi_ting_covers($entities) {
+  $covers = array();
+
+  // Exceptions should only be thrown if something is so wrong,
+  // that no images can be fetched whatsoever.
+  try {
+    $service = new AdditionalInformationService(variable_get('ting_covers_addi_wsdl_url'), variable_get('ting_covers_addi_username'), variable_get('ting_covers_addi_group'), variable_get('ting_covers_addi_password'), variable_get('ting_covers_addi_enforce_url', FALSE));
+
+    // Retrieve covers by PID.
+    $retrieved = $service->getByPid(array_keys($entities));
+
+    foreach ($retrieved as $pid=> $cover) {
+      // Try to extract the image url from the result.
+      $source_url = FALSE;
+      if ($cover->detailUrl) {
+        $source_url = $cover->detailUrl;
+      }
+      elseif ($cover->thumbnailUrl) {
+        $source_url = $cover->thumbnailUrl;
+      }
+
+      // If we still haven't found a cover check if we can use external URL.
+      if (!$source_url && isset($cover->externUrl) && variable_get('ting_covers_addi_external_url', TRUE)) {
+        $entity = $entities[$pid];
+        $sources = variable_get('ting_covers_addi_external_url_sources', _ting_covers_addi_default_external_url_sources());
+        if (in_array(drupal_strtolower($entity->getAc_source()), $sources)) {
+          $source_url = $cover->externUrl;
+        }
+      }
+
+      if ($source_url) {
+        // Return the path to the cover.
+        $covers[$pid] = $source_url;
+      }
+    }
+  }
+  catch (Exception $e) {
+    watchdog('ting_covers_addi', 'Unable to retrieve covers from ADDI: %message', array('%message' => $e->getMessage()), WATCHDOG_ERROR);
+
+    // Error in fetching, return no covers.
+    return array();
+  }
+
+  // Return all image information.
+  return $covers;
+}
+
+/**
+ * Default sources where external URL should be used.
+ */
+function _ting_covers_addi_default_external_url_sources() {
+  return array(
+    'ereolen global',
+    'comics plus',
+    'pressreader',
+  );
+}
