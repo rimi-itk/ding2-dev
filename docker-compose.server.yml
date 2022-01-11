@@ -10,19 +10,18 @@ networks:
 
 services:
   phpfpm:
-    image: itkdev/php7.4-fpm:alpine
+    image: itkdev/php7.0-fpm:alpine
     restart: unless-stopped
     networks:
       - app
     environment:
       - PHP_MAX_EXECUTION_TIME=30
       - PHP_MEMORY_LIMIT=128M
-      - COMPOSER_VERSION=1
+      - COMPOSER_VERSION=2
     depends_on:
       - memcached
     volumes:
       - .:/app:delegated
-      - drush-cache:/root/.drush
 
   nginx:
     image: nginx:stable-alpine
@@ -45,7 +44,7 @@ services:
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-http.middlewares=redirect-to-https"
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}.rule=Host(`${COMPOSE_SERVER_DOMAIN}`)"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}.entrypoints=websecure"     
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}.entrypoints=websecure"
        #- "traefik.http.routers.${COMPOSE_PROJECT_NAME}.middlewares=ITKBasicAuth@file"
 
   memcached:
@@ -55,17 +54,3 @@ services:
       - app
     environment:
       - MEMCACHED_CACHE_SIZE=64
-
-  drush:
-    image: itkdev/drush6:latest
-    networks:
-      - app
-    entrypoint:
-      - drush
-    volumes:
-      - drush-cache:/root/.drush
-      - ./:/app
-
-# Drush cache volume to persist cache between runs.
-volumes:
-  drush-cache:
